@@ -259,7 +259,7 @@ client.on("messageCreate", async (message) => {
       .slice(0, 10)
       .map(
         ([userId, points], index) =>
-          `${index + 1}. <@${userId}> - ${points} pts`
+          `${index + 1}. <@${userId}> - ${points} points`
       )
       .join("\n");
 
