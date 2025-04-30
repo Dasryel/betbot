@@ -225,8 +225,17 @@ client.on("messageCreate", async (message) => {
 
   // Command: Check points
   if (message.content === "!points") {
-    const points = userPoints[message.author.id] || 0;
-    message.reply(`🏆 You have **${points}** points!`);
+    try {
+      const pointsData = fs.existsSync("points.json")
+        ? JSON.parse(fs.readFileSync("points.json", "utf8"))
+        : {};
+
+      const points = pointsData[message.author.id] || 0;
+      message.reply(`🏆 You have **${points}** points!`);
+    } catch (err) {
+      console.error("Failed to read points.json:", err.message);
+      message.reply("⚠️ Could not retrieve your points right now.");
+    }
   }
 
   if (message.content === "!top") {
