@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "discord.js": "^14.19.2",
+    "dotenv": "^16.5.0"
+  },
+  "name": "kothbet",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
