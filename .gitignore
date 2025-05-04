@@ -1,2 +1,5 @@
 node_modules/
 .env
+activebets.json
+archivedbets.json
+permission.json

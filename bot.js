@@ -223,7 +223,7 @@ client.on("interactionCreate", async (interaction) => {
     ) {
       return interaction.reply({
         content: "❌ You need Administrator permission to use this command.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -231,7 +231,7 @@ client.on("interactionCreate", async (interaction) => {
     if (!role) {
       return interaction.reply({
         content: "❌ Please select a valid role.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -244,7 +244,7 @@ client.on("interactionCreate", async (interaction) => {
     ) {
       return interaction.reply({
         content: `⚠️ Role ${role.name} already has permission to use betting commands.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -257,104 +257,124 @@ client.on("interactionCreate", async (interaction) => {
 
     return interaction.reply({
       content: `✅ Role ${role.name} can now use betting commands.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
-
+  // --- Slash Command: /balance ---
   if (
     interaction.isChatInputCommand() &&
-    interaction.commandName === "unassign"
+    interaction.commandName === "balance"
   ) {
-    // Only administrators can unassign roles
-    if (
-      !interaction.member.permissions.has(
-        PermissionsBitField.Flags.Administrator
-      )
-    ) {
-      return interaction.reply({
-        content: "❌ You need Administrator permission to use this command.",
-        ephemeral: true,
-      });
-    }
+    try {
+      // Check if user has permission for modifying balance
+      const canModify = hasPermission(interaction.member);
 
-    const role = interaction.options.getRole("role");
-    if (!role) {
-      return interaction.reply({
-        content: "❌ Please select a valid role.",
-        ephemeral: true,
-      });
-    }
+      // Get the target user
+      const targetUser = interaction.options.getUser("user");
+      const newBalance = interaction.options.getInteger("set");
 
-    const permissions = loadPermissions();
-
-    // Check if the role is not assigned
-    if (
-      !permissions.allowedRoles ||
-      !permissions.allowedRoles.includes(role.id)
-    ) {
-      return interaction.reply({
-        content: `⚠️ Role ${role.name} doesn't have permission to use betting commands.`,
-        ephemeral: true,
-      });
-    }
-
-    // Remove the role from allowed roles
-    permissions.allowedRoles = permissions.allowedRoles.filter(
-      (id) => id !== role.id
-    );
-    savePermissions(permissions);
-
-    return interaction.reply({
-      content: `✅ Role ${role.name} can no longer use betting commands.`,
-      ephemeral: true,
-    });
-  }
-
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "list_roles"
-  ) {
-    // Only administrators can list roles
-    if (
-      !interaction.member.permissions.has(
-        PermissionsBitField.Flags.Administrator
-      )
-    ) {
-      return interaction.reply({
-        content: "❌ You need Administrator permission to use this command.",
-        ephemeral: true,
-      });
-    }
-
-    const permissions = loadPermissions();
-
-    if (!permissions.allowedRoles || permissions.allowedRoles.length === 0) {
-      return interaction.reply({
-        content:
-          "ℹ️ No roles are currently assigned to use betting commands. Only administrators can use them.",
-        ephemeral: true,
-      });
-    }
-
-    // Get role names
-    const guild = interaction.guild;
-    const roleNames = [];
-
-    for (const roleId of permissions.allowedRoles) {
-      const role = guild.roles.cache.get(roleId);
-      if (role) {
-        roleNames.push(`- ${role.name}`);
-      } else {
-        roleNames.push(`- Unknown role (ID: ${roleId})`);
+      if (!targetUser) {
+        return interaction.reply({
+          content: "❌ Please select a valid user.",
+          flags: MessageFlags.Ephemeral,
+        });
       }
+
+      // Read user data
+      const userData = fs.existsSync(userDataFile)
+        ? JSON.parse(fs.readFileSync(userDataFile))
+        : {};
+
+      // Get current balance
+      const currentBalance = userData[targetUser.id]
+        ? userData[targetUser.id].points || 0
+        : 0;
+
+      // If the user wants to set a new balance
+      if (newBalance !== null) {
+        // Check if the user has permission
+        if (!canModify) {
+          return interaction.reply({
+            content: "❌ You don't have permission to modify user balances.",
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+
+        // Create the confirmation buttons
+        const confirmRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`confirm-balance-${targetUser.id}-${newBalance}`)
+            .setLabel("Confirm")
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`cancel-balance-${targetUser.id}`)
+            .setLabel("Cancel")
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        // Show confirmation dialog
+        return interaction.reply({
+          content: `⚠️ Are you sure you want to change **${targetUser.username}**'s balance from **${currentBalance}** to **${newBalance}**?`,
+          components: [confirmRow],
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // Check if user has permission to modify balance
+      if (!canModify) {
+        // Just display the balance for non-admins
+        const balanceEmbed = new EmbedBuilder()
+          .setColor(0x3498db)
+          .setTitle(`Balance: ${targetUser.username}`)
+          .setThumbnail(targetUser.displayAvatarURL())
+          .addFields({
+            name: "Current Points",
+            value: `${currentBalance}`,
+            inline: true,
+          })
+          .setFooter({
+            text: "Betting System",
+          });
+
+        return interaction.reply({
+          embeds: [balanceEmbed],
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // For admins, show a modal to update the balance
+      const modal = new ModalBuilder()
+        .setCustomId(`balance-modal-${targetUser.id}`)
+        .setTitle(`Update Balance for ${targetUser.username}`);
+
+      const balanceInput = new TextInputBuilder()
+        .setCustomId("new-balance")
+        .setLabel(`Current Balance: ${currentBalance}`)
+        .setPlaceholder("Enter new balance")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setValue(currentBalance.toString());
+
+      const reasonInput = new TextInputBuilder()
+        .setCustomId("reason")
+        .setLabel("Reason for change")
+        .setPlaceholder("Enter reason (optional)")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false);
+
+      const balanceRow = new ActionRowBuilder().addComponents(balanceInput);
+      const reasonRow = new ActionRowBuilder().addComponents(reasonInput);
+
+      modal.addComponents(balanceRow, reasonRow);
+      await interaction.showModal(modal);
+    } catch (error) {
+      console.error("Error in balance command:", error);
+      return interaction.reply({
+        content: "❌ An error occurred while checking the balance.",
+        flags: MessageFlags.Ephemeral,
+      });
     }
-
-    return interaction.reply({
-      content: `**Roles with betting permissions:**\n${roleNames.join("\n")}`,
-      ephemeral: true,
-    });
   }
-
   // --- Winner Dropdown Handling ---
   if (
     interaction.isStringSelectMenu() &&
@@ -425,6 +445,244 @@ client.on("interactionCreate", async (interaction) => {
 
     modal.addComponents(row1, row2);
     await interaction.showModal(modal);
+  }
+  // --- Balance Button Handlers ---
+  if (
+    interaction.isButton() &&
+    interaction.customId.startsWith("confirm-balance-")
+  ) {
+    try {
+      // Check if user has permission
+      if (!hasPermission(interaction.member)) {
+        return interaction.reply({
+          content: "❌ You don't have permission to modify user balances.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // Parse the customId
+      const parts = interaction.customId.split("-");
+      const userId = parts[2];
+      const newBalance = parseInt(parts[3]);
+
+      // Read user data
+      const userData = fs.existsSync(userDataFile)
+        ? JSON.parse(fs.readFileSync(userDataFile))
+        : {};
+
+      // Get current balance
+      const oldBalance = userData[userId] ? userData[userId].points || 0 : 0;
+
+      // Update the balance
+      if (!userData[userId]) userData[userId] = {};
+      userData[userId].points = newBalance;
+
+      // Save the updated data
+      fs.writeFileSync(userDataFile, JSON.stringify(userData, null, 2));
+
+      try {
+        // Try to fetch the user for a better message
+        const user = await client.users.fetch(userId);
+
+        // Send a DM to the user about their balance change
+        try {
+          const userEmbed = new EmbedBuilder()
+            .setColor(0xf39c12) // Orange color
+            .setTitle(`Your Points Balance Has Changed`)
+            .addFields(
+              {
+                name: "Previous Balance",
+                value: `${oldBalance}`,
+                inline: true,
+              },
+              { name: "New Balance", value: `${newBalance}`, inline: true },
+              {
+                name: "Changed By",
+                value: `${interaction.user.username}`,
+                inline: false,
+              }
+            )
+            .setFooter({
+              text: `Betting System`,
+            });
+
+          await user.send({ embeds: [userEmbed] });
+        } catch (err) {
+          console.error(`Failed to DM user ${user.username}:`, err);
+        }
+
+        // Reply with success message
+        await interaction.update({
+          content: `✅ Successfully updated ${user.username}'s balance from ${oldBalance} to ${newBalance}.`,
+          components: [],
+        });
+      } catch (error) {
+        // If we can't fetch the user, use the ID
+        await interaction.update({
+          content: `✅ Successfully updated user ID ${userId}'s balance from ${oldBalance} to ${newBalance}.`,
+          components: [],
+        });
+      }
+    } catch (error) {
+      console.error("Error processing balance confirmation:", error);
+      await interaction.update({
+        content: `❌ An error occurred while updating the balance: ${error.message}`,
+        components: [],
+      });
+    }
+  }
+
+  if (
+    interaction.isButton() &&
+    interaction.customId.startsWith("cancel-balance-")
+  ) {
+    return interaction.update({
+      content: "❌ Balance update cancelled.",
+      components: [],
+    });
+  }
+  // --- Balance Modal Submit Handler ---
+  if (
+    interaction.isModalSubmit() &&
+    interaction.customId.startsWith("balance-modal-")
+  ) {
+    // Get the user ID from the custom ID
+    const userId = interaction.customId.split("-")[2];
+
+    try {
+      // Check if user has permission
+      if (!hasPermission(interaction.member)) {
+        return interaction.reply({
+          content: "❌ You don't have permission to modify user balances.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // Get the new balance value from the modal
+      const newBalanceStr = interaction.fields.getTextInputValue("new-balance");
+      const newBalance = parseInt(newBalanceStr);
+
+      // Get optional reason
+      let reason;
+      try {
+        reason = interaction.fields.getTextInputValue("reason");
+      } catch (e) {
+        reason = "No reason provided";
+      }
+
+      // Validate input is a number
+      if (isNaN(newBalance)) {
+        return interaction.reply({
+          content: "❌ Please enter a valid number for the balance.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // Read user data
+      const userData = fs.existsSync(userDataFile)
+        ? JSON.parse(fs.readFileSync(userDataFile))
+        : {};
+
+      // Get current balance
+      const oldBalance = userData[userId] ? userData[userId].points || 0 : 0;
+
+      // Update the balance
+      if (!userData[userId]) userData[userId] = {};
+      userData[userId].points = newBalance;
+
+      // Save the updated data
+      fs.writeFileSync(userDataFile, JSON.stringify(userData, null, 2));
+
+      try {
+        // Try to fetch the user for a better message
+        const user = await client.users.fetch(userId);
+
+        // Send a DM to the user about their balance change
+        try {
+          const userEmbed = new EmbedBuilder()
+            .setColor(0xf39c12) // Orange color
+            .setTitle(`Your Points Balance Has Changed`)
+            .addFields(
+              {
+                name: "Previous Balance",
+                value: `${oldBalance}`,
+                inline: true,
+              },
+              { name: "New Balance", value: `${newBalance}`, inline: true },
+              {
+                name: "Changed By",
+                value: `${interaction.user.username}`,
+                inline: false,
+              },
+              {
+                name: "Reason",
+                value: reason || "No reason provided",
+                inline: false,
+              }
+            )
+            .setFooter({
+              text: `Betting System`,
+            });
+
+          await user.send({ embeds: [userEmbed] });
+        } catch (err) {
+          console.error(`Failed to DM user ${user.username}:`, err);
+        }
+
+        // Create a success embed
+        const successEmbed = new EmbedBuilder()
+          .setColor(0x2ecc71) // Green color
+          .setTitle(`Balance Updated Successfully`)
+          .setDescription(`${user.username}'s balance has been updated.`)
+          .addFields(
+            { name: "Previous Balance", value: `${oldBalance}`, inline: true },
+            { name: "New Balance", value: `${newBalance}`, inline: true },
+            {
+              name: "Reason",
+              value: reason || "No reason provided",
+              inline: false,
+            }
+          )
+          .setFooter({
+            text: `Betting System`,
+          });
+
+        // Reply with the success message
+        await interaction.reply({
+          embeds: [successEmbed],
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (error) {
+        // If we can't fetch the user, use the ID
+        const successEmbed = new EmbedBuilder()
+          .setColor(0x2ecc71) // Green color
+          .setTitle(`Balance Updated Successfully`)
+          .setDescription(`User ID: ${userId}'s balance has been updated.`)
+          .addFields(
+            { name: "Previous Balance", value: `${oldBalance}`, inline: true },
+            { name: "New Balance", value: `${newBalance}`, inline: true },
+            {
+              name: "Reason",
+              value: reason || "No reason provided",
+              inline: false,
+            }
+          )
+          .setFooter({
+            text: `Betting System • ${new Date().toLocaleString()}`,
+          });
+
+        await interaction.reply({
+          embeds: [successEmbed],
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    } catch (error) {
+      console.error("Error processing balance update:", error);
+      return interaction.reply({
+        content: `❌ An error occurred while updating the balance: ${error.message}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
   }
 
   if (
@@ -644,7 +902,7 @@ client.on("interactionCreate", async (interaction) => {
 
       // Create and update the bet message with results - without displaying all participant results
       const resultEmbed = new EmbedBuilder()
-        .setColor(0xf1c40f) // Gold color for closed bets
+        .setColor(0xff0000) // Gold color for closed bets
         .setTitle(`${match.question}`)
         .setDescription(` **CLOSED** - Winning option: **${winLabel}**`)
         .addFields(
@@ -660,14 +918,14 @@ client.on("interactionCreate", async (interaction) => {
             const isWinner = doEmojisMatch(opt.emoji, wEmoji);
 
             return {
-              name: `${opt.emoji} ${opt.label}`,
-              value: `${percentage}% ${isWinner ? "🏆" : ""}`,
+              name: `${opt.label}`,
+              value: `${percentage}% ${isWinner ? "✅" : ""}`,
               inline: true,
             };
           })
         )
         .setFooter({
-          text: `Bet closed • Winners: +${winnerValue}  • Losers: -${looserValue} `,
+          text: `• Winners: +${winnerValue}  • Losers: -${looserValue} `,
         });
 
       // Update the original message with the results embed
@@ -691,7 +949,7 @@ client.on("interactionCreate", async (interaction) => {
     if (!hasPermission(interaction.member)) {
       return interaction.reply({
         content: "❌ You don't have permission to use this command.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -809,7 +1067,7 @@ client.on("interactionCreate", async (interaction) => {
     if (!hasPermission(interaction.member)) {
       return interaction.reply({
         content: "❌ You don't have permission to use this command.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -878,7 +1136,7 @@ client.on("interactionCreate", async (interaction) => {
       if (sortedUsers.length === 0) {
         return interaction.reply({
           content: "No users have earned points yet.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -923,14 +1181,63 @@ client.on("interactionCreate", async (interaction) => {
         console.error("Error fetching users for leaderboard:", error);
         return interaction.reply({
           content: "An error occurred while creating the leaderboard.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
     } catch (error) {
       console.error("Error reading user data for leaderboard:", error);
       return interaction.reply({
         content: "An error occurred while generating the leaderboard.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
+
+  // --- Slash Command: /balance ---
+  if (
+    interaction.isChatInputCommand() &&
+    interaction.commandName === "balance"
+  ) {
+    try {
+      // Check if user has permission for modifying balance
+      const canModify = hasPermission(interaction.member);
+
+      // Get the target user
+      const targetUser = interaction.options.getUser("user");
+      const newBalance = interaction.options.getInteger("set");
+
+      if (!targetUser) {
+        return interaction.reply({
+          content: "❌ Please select a valid user.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // Read user data
+      const userData = fs.existsSync(userDataFile)
+        ? JSON.parse(fs.readFileSync(userDataFile))
+        : {};
+
+      // Get current balance
+      const currentBalance = userData[targetUser.id]
+        ? userData[targetUser.id].points
+        : 0;
+
+      // If the user wants to set a new balance
+      if (newBalance !== null) {
+        // Check if the user has permission
+        if (!canModify) {
+          return interaction.reply({
+            content: "❌ You don't have permission to modify user balances.",
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error in balance command:", error);
+      return interaction.reply({
+        content: "❌ An error occurred while checking the balance.",
+        flags: MessageFlags.Ephemeral,
       });
     }
   }
@@ -993,7 +1300,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (match.active && !match.lockMessageSent) {
       try {
         const lockedEmbed = EmbedBuilder.from(reaction.message.embeds[0])
-          .setColor(0xff9800) // Orange for locked bets
+          .setColor(0xffff00) // yellow for locked bets
           .setTitle(`🔒 LOCKED: ${match.question}`)
           .setFooter({
             text: `Voting locked • Awaiting results...`,

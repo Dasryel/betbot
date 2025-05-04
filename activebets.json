@@ -1,1 +1,19 @@
-{}
+{
+  "1368535183979974677": {
+    "question": "Vice Underdogs vs. Miami Killers",
+    "options": [
+      {
+        "label": "VU",
+        "emoji": "🇻"
+      },
+      {
+        "label": "MK",
+        "emoji": "Ⓜ️"
+      }
+    ],
+    "lockTime": 1746360000000,
+    "active": true,
+    "createdAt": 1746354614586,
+    "createdBy": "202732139706318848"
+  }
+}

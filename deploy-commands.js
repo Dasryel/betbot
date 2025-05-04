@@ -62,6 +62,16 @@ const commands = [
   new SlashCommandBuilder()
     .setName("top")
     .setDescription("Check the top 10 users"),
+
+  new SlashCommandBuilder()
+    .setName("balance")
+    .setDescription("View or modify a user's point balance")
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("The user whose balance you want to check or modify")
+        .setRequired(true)
+    ),
 ];
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
