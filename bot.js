@@ -175,7 +175,147 @@ function getEmojiDisplay(emoji) {
   return emoji.id ? `<:${emoji.name}:${emoji.id}>` : emoji.name;
 }
 
-client.once("ready", () => {
+function getRandomItem(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+// Add this function near your other helper functions
+// Validates reactions on a bet message and removes invalid ones
+async function validateBetReactions(messageId, lockTime) {
+  try {
+    // Load match data from file
+    const activeBets = loadActiveBets();
+    const match = activeBets[messageId];
+    if (!match || !match.options) return;
+
+    // Find the message across all guilds and channels
+    const guild = client.guilds.cache.first();
+    if (!guild) return;
+
+    const channels = await guild.channels.fetch();
+    let targetMessage = null;
+
+    // Look for the message in all text channels
+    for (const [_, channel] of channels) {
+      if (!channel.isTextBased()) continue;
+
+      try {
+        const message = await channel.messages
+          .fetch(messageId)
+          .catch(() => null);
+        if (message) {
+          targetMessage = message;
+          break;
+        }
+      } catch (err) {
+        // Skip if can't access channel or message not found
+        continue;
+      }
+    }
+
+    if (!targetMessage) {
+      console.log(`Message ${messageId} not found in any channel.`);
+      return;
+    }
+
+    console.log(`Validating reactions for bet: ${match.question}`);
+
+    // Get list of valid emojis using our helper functions
+    const allowedEmojis = match.options.map((opt) => normalizeEmoji(opt.emoji));
+
+    // A map to track which users have which valid reactions
+    const userReactions = new Map();
+
+    // First pass - collect all valid reactions and remove invalid ones
+    for (const [emojiKey, reaction] of targetMessage.reactions.cache) {
+      const currentEmojiId = normalizeEmoji(reaction.emoji);
+
+      // Check if this emoji is allowed for this bet
+      const isAllowed = allowedEmojis.includes(currentEmojiId);
+
+      if (!isAllowed) {
+        console.log(
+          `Found invalid emoji ${emojiKey} on bet message ${messageId}`
+        );
+
+        // Fetch all users who used this reaction
+        const users = await reaction.users.fetch();
+
+        // Remove reaction from all non-bot users
+        for (const [userId, user] of users) {
+          if (!user.bot) {
+            console.log(`Removing invalid emoji from user ${user.username}`);
+            await reaction.users.remove(userId).catch((err) => {
+              console.error(
+                `Error removing invalid reaction from ${user.username}:`,
+                err
+              );
+            });
+          }
+        }
+        continue;
+      }
+
+      // If it's a valid emoji, collect users who used it
+      const users = await reaction.users.fetch();
+
+      for (const [userId, user] of users) {
+        if (!user.bot) {
+          if (!userReactions.has(userId)) {
+            userReactions.set(userId, []);
+          }
+
+          userReactions.get(userId).push({
+            emoji: reaction.emoji,
+            reaction: reaction,
+          });
+        }
+      }
+    }
+
+    // Second pass - ensure each user only has one reaction
+    const now = Date.now();
+    const isLocked = now > lockTime;
+
+    // Only process multiple reactions if the bet isn't locked yet
+    if (!isLocked) {
+      for (const [userId, reactions] of userReactions) {
+        // If user has more than one valid reaction
+        if (reactions.length > 1) {
+          try {
+            // Keep one reaction randomly
+            const keepReaction = getRandomItem(reactions);
+
+            // Remove all other reactions
+            for (const reaction of reactions) {
+              if (!doEmojisMatch(reaction.emoji, keepReaction.emoji)) {
+                console.log(`Removing excess emoji from user ${userId}`);
+                await reaction.reaction.users.remove(userId).catch((err) => {
+                  console.error(`Error removing excess reaction:`, err);
+                });
+              }
+            }
+          } catch (err) {
+            console.error(
+              `Error processing multiple reactions for user ${userId}:`,
+              err
+            );
+          }
+        }
+      }
+    }
+
+    console.log(`Finished validating reactions for bet: ${match.question}`);
+  } catch (error) {
+    console.error(
+      `Error validating reactions for message ${messageId}:`,
+      error
+    );
+  }
+}
+
+// Replace your existing client.once("ready") event with this updated version
+client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   const activeBets = loadActiveBets();
@@ -183,6 +323,10 @@ client.once("ready", () => {
   for (const [messageId, match] of Object.entries(activeBets)) {
     if (match.active) {
       activeMatches.set(messageId, match.lockTime);
+
+      // Validate reactions on this bet
+      console.log(`Validating bet ${messageId}: ${match.question}`);
+      await validateBetReactions(messageId, match.lockTime);
     }
   }
 
@@ -285,12 +429,11 @@ client.on("interactionCreate", async (interaction) => {
         ? JSON.parse(fs.readFileSync(userDataFile))
         : {};
 
-      // Get current balance
       const currentBalance = userData[targetUser.id]
-        ? userData[targetUser.id].points || 0
+        ? userData[targetUser.id].points || 0 // <-- Accessing the points property correctly
         : 0;
 
-      // If the user wants to set a new balance
+      // If the user wants to set a new balance immediately using the "set" option
       if (newBalance !== null) {
         // Check if the user has permission
         if (!canModify) {
@@ -320,53 +463,37 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // Check if user has permission to modify balance
-      if (!canModify) {
-        // Just display the balance for non-admins
-        const balanceEmbed = new EmbedBuilder()
-          .setColor(0x3498db)
-          .setTitle(`Balance: ${targetUser.username}`)
-          .setThumbnail(targetUser.displayAvatarURL())
-          .addFields({
-            name: "Current Points",
-            value: `${currentBalance}`,
-            inline: true,
-          })
-          .setFooter({
-            text: "Betting System",
-          });
-
-        return interaction.reply({
-          embeds: [balanceEmbed],
-          flags: MessageFlags.Ephemeral,
+      // Create the balance embed
+      const balanceEmbed = new EmbedBuilder()
+        .setColor(0x3498db)
+        .setTitle(`Balance: ${targetUser.username}`)
+        .setThumbnail(targetUser.displayAvatarURL())
+        .addFields({
+          name: "Current Points",
+          value: `${currentBalance}`,
+          inline: true,
+        })
+        .setFooter({
+          text: "Betting System",
         });
+
+      // Create a modify button if the user has permission
+      let components = [];
+      if (canModify) {
+        const modifyRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`modify-balance-${targetUser.id}`)
+            .setLabel("Modify Balance")
+            .setStyle(ButtonStyle.Primary)
+        );
+        components.push(modifyRow);
       }
 
-      // For admins, show a modal to update the balance
-      const modal = new ModalBuilder()
-        .setCustomId(`balance-modal-${targetUser.id}`)
-        .setTitle(`Update Balance for ${targetUser.username}`);
-
-      const balanceInput = new TextInputBuilder()
-        .setCustomId("new-balance")
-        .setLabel(`Current Balance: ${currentBalance}`)
-        .setPlaceholder("Enter new balance")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setValue(currentBalance.toString());
-
-      const reasonInput = new TextInputBuilder()
-        .setCustomId("reason")
-        .setLabel("Reason for change")
-        .setPlaceholder("Enter reason (optional)")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false);
-
-      const balanceRow = new ActionRowBuilder().addComponents(balanceInput);
-      const reasonRow = new ActionRowBuilder().addComponents(reasonInput);
-
-      modal.addComponents(balanceRow, reasonRow);
-      await interaction.showModal(modal);
+      return interaction.reply({
+        embeds: [balanceEmbed],
+        components: components,
+        flags: MessageFlags.Ephemeral,
+      });
     } catch (error) {
       console.error("Error in balance command:", error);
       return interaction.reply({
@@ -531,6 +658,99 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
   }
+  // --- Modify Balance Button Handler ---
+  if (
+    interaction.isButton() &&
+    interaction.customId.startsWith("modify-balance-")
+  ) {
+    try {
+      // Check if user has permission
+      if (!hasPermission(interaction.member)) {
+        return interaction.reply({
+          content: "❌ You don't have permission to modify user balances.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      // Parse the user ID from the custom ID
+      const userId = interaction.customId.split("-")[2];
+
+      // Read user data
+      const userData = fs.existsSync(userDataFile)
+        ? JSON.parse(fs.readFileSync(userDataFile))
+        : {};
+
+      // Get current balance
+      const currentBalance = userData[userId]
+        ? userData[userId].points || 0
+        : 0;
+
+      try {
+        // Try to fetch the user to display their name in the modal
+        const user = await client.users.fetch(userId);
+
+        // Create and show the balance update modal
+        const modal = new ModalBuilder()
+          .setCustomId(`balance-modal-${userId}`)
+          .setTitle(`Update Balance for ${user.username}`);
+
+        const balanceInput = new TextInputBuilder()
+          .setCustomId("new-balance")
+          .setLabel(`Current Balance: ${currentBalance}`)
+          .setPlaceholder("Enter new balance")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setValue(currentBalance.toString());
+
+        const reasonInput = new TextInputBuilder()
+          .setCustomId("reason")
+          .setLabel("Reason for change")
+          .setPlaceholder("Enter reason (optional)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const balanceRow = new ActionRowBuilder().addComponents(balanceInput);
+        const reasonRow = new ActionRowBuilder().addComponents(reasonInput);
+
+        modal.addComponents(balanceRow, reasonRow);
+        await interaction.showModal(modal);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+
+        // If we can't fetch the user, use a generic modal title
+        const modal = new ModalBuilder()
+          .setCustomId(`balance-modal-${userId}`)
+          .setTitle(`Update Balance for User ID: ${userId}`);
+
+        const balanceInput = new TextInputBuilder()
+          .setCustomId("new-balance")
+          .setLabel(`Current Balance: ${currentBalance}`)
+          .setPlaceholder("Enter new balance")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setValue(currentBalance.toString());
+
+        const reasonInput = new TextInputBuilder()
+          .setCustomId("reason")
+          .setLabel("Reason for change")
+          .setPlaceholder("Enter reason (optional)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const balanceRow = new ActionRowBuilder().addComponents(balanceInput);
+        const reasonRow = new ActionRowBuilder().addComponents(reasonInput);
+
+        modal.addComponents(balanceRow, reasonRow);
+        await interaction.showModal(modal);
+      }
+    } catch (error) {
+      console.error("Error showing balance update modal:", error);
+      return interaction.reply({
+        content: `❌ An error occurred while opening the balance update modal: ${error.message}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  }
 
   if (
     interaction.isButton() &&
@@ -668,7 +888,7 @@ client.on("interactionCreate", async (interaction) => {
             }
           )
           .setFooter({
-            text: `Betting System • ${new Date().toLocaleString()}`,
+            text: `Betting System`,
           });
 
         await interaction.reply({
@@ -902,13 +1122,12 @@ client.on("interactionCreate", async (interaction) => {
 
       // Create and update the bet message with results - without displaying all participant results
       const resultEmbed = new EmbedBuilder()
-        .setColor(0xff0000) // Gold color for closed bets
-        .setTitle(`${match.question}`)
-        .setDescription(` **CLOSED** - Winning option: **${winLabel}**`)
+        .setColor(0xff0000) // RED for closed bets
+        .setTitle(`CLOSED: ${match.question}`)
+        .setDescription(`Winning option: **${winLabel}**`)
         .addFields(
-          { name: "\u200B", value: " **Betting Options**", inline: false },
+          { name: "\u200B", value: "**Betting Options**", inline: false },
           ...match.options.map((opt) => {
-            // Calculate percentage of people who reacted to this option
             const totalVotes = match.options.reduce(
               (sum, option) => sum + option.votes,
               0
@@ -918,14 +1137,20 @@ client.on("interactionCreate", async (interaction) => {
             const isWinner = doEmojisMatch(opt.emoji, wEmoji);
 
             return {
-              name: `${opt.label}`,
-              value: `${percentage}% ${isWinner ? "✅" : ""}`,
+              name: `${opt.label} ${isWinner ? "✅" : ""}`,
+              value: `${percentage}%`,
               inline: true,
             };
-          })
+          }),
+          // Add one more field to show winner/loser points
+          {
+            name: "\u200B",
+            value: `Winners: +${winnerValue}\nLosers: -${looserValue}`,
+            inline: false,
+          }
         )
         .setFooter({
-          text: `• Winners: +${winnerValue}  • Losers: -${looserValue} `,
+          text: "Betting System",
         });
 
       // Update the original message with the results embed
@@ -999,7 +1224,7 @@ client.on("interactionCreate", async (interaction) => {
         .setColor(0x3498db) // Nice blue color
         .setTitle(`${question}`)
         .setDescription(
-          `React with one of the options below to place your bet!`
+          `🔒 Voting locks at ${timeStr}\nReact with one of the options below to place your bet!`
         )
         .addFields(
           { name: "\u200B", value: "**Options**", inline: false },
@@ -1012,7 +1237,7 @@ client.on("interactionCreate", async (interaction) => {
           })
         )
         .setFooter({
-          text: `Voting locks at ${timeStr} • React to place your bet!`,
+          text: `Betting System`,
         });
 
       const sentMessage = await interaction.channel.send({
@@ -1095,23 +1320,6 @@ client.on("interactionCreate", async (interaction) => {
     return interaction.reply({
       content: `🏆 Select the winner for:\n**${match.question}**`,
       components: [row],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "mybalance"
-  ) {
-    const userId = interaction.user.id;
-
-    const userData = fs.existsSync(userDataFile)
-      ? JSON.parse(fs.readFileSync(userDataFile))
-      : {};
-
-    const userPoints = userData[userId] ? userData[userId].points : 0;
-
-    interaction.reply({
-      content: "Your current balance: " + userPoints,
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -1303,7 +1511,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
           .setColor(0xffff00) // yellow for locked bets
           .setTitle(`🔒 LOCKED: ${match.question}`)
           .setFooter({
-            text: `Voting locked • Awaiting results...`,
+            text: `Betting System`,
           });
 
         await reaction.message.edit({ embeds: [lockedEmbed] });
@@ -1380,7 +1588,7 @@ setInterval(async () => {
               .setColor(0xff9800) // Orange for locked bets
               .setTitle(`🔒 LOCKED: ${match.question}`)
               .setFooter({
-                text: `Voting locked • Awaiting results...`,
+                text: `Betting System`,
               });
 
             await targetMessage.edit({ embeds: [lockedEmbed] });

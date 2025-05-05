@@ -57,9 +57,6 @@ const commands = [
     )
     .toJSON(),
   new SlashCommandBuilder()
-    .setName("mybalance")
-    .setDescription("Check your betting balance"),
-  new SlashCommandBuilder()
     .setName("top")
     .setDescription("Check the top 10 users"),
 

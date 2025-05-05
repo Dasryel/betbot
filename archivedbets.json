@@ -363,5 +363,213 @@
       "dasriel (+3)"
     ],
     "losers": []
+  },
+  "1368535183979974677": {
+    "question": "Vice Underdogs vs. Miami Killers",
+    "options": [
+      {
+        "label": "VU",
+        "emoji": "🇻",
+        "votes": 1
+      },
+      {
+        "label": "MK",
+        "emoji": "Ⓜ️",
+        "votes": 0
+      }
+    ],
+    "lockTime": 1746360000000,
+    "active": false,
+    "createdAt": 1746354614586,
+    "createdBy": "202732139706318848",
+    "lockMessageSent": true,
+    "lockedAt": 1746459727067,
+    "winnerEmoji": "Ⓜ️",
+    "winnerLabel": "MK",
+    "closedAt": 1746460270316,
+    "winnerPoints": 3,
+    "loserPoints": 1,
+    "winners": [],
+    "losers": [
+      "dasriel (-1)"
+    ]
+  },
+  "1368978454648848458": {
+    "question": "Vice Underdogs vs. Miami Killers",
+    "options": [
+      {
+        "label": "VU",
+        "emoji": "🇻",
+        "votes": 0
+      },
+      {
+        "label": "MK",
+        "emoji": "Ⓜ️",
+        "votes": 1
+      }
+    ],
+    "lockTime": 1746460800000,
+    "active": false,
+    "createdAt": 1746460298366,
+    "createdBy": "202732139706318848",
+    "lockMessageSent": true,
+    "lockedAt": 1746460813885,
+    "winnerEmoji": "🇻",
+    "winnerLabel": "VU",
+    "closedAt": 1746461409825,
+    "winnerPoints": 3,
+    "loserPoints": 1,
+    "winners": [],
+    "losers": [
+      "dasriel (-1)"
+    ]
+  },
+  "1368979408182050876": {
+    "question": "MVP of the match",
+    "options": [
+      {
+        "label": "Axxo",
+        "emoji": "🇦",
+        "votes": 1
+      },
+      {
+        "label": "Blitz",
+        "emoji": "🇧",
+        "votes": 0
+      },
+      {
+        "label": "Detonator",
+        "emoji": "🇩",
+        "votes": 0
+      }
+    ],
+    "lockTime": 1746460800000,
+    "active": false,
+    "createdAt": 1746460526264,
+    "createdBy": "202732139706318848",
+    "lockMessageSent": true,
+    "lockedAt": 1746460813885,
+    "winnerEmoji": "🇦",
+    "winnerLabel": "Axxo",
+    "closedAt": 1746462035111,
+    "winnerPoints": 10,
+    "loserPoints": 2,
+    "winners": [
+      "dasriel (+10)"
+    ],
+    "losers": []
+  },
+  "1368982616379887778": {
+    "question": "Will VU reach 300",
+    "options": [
+      {
+        "label": "Yes",
+        "emoji": "✅",
+        "votes": 1
+      },
+      {
+        "label": "No",
+        "emoji": "❌",
+        "votes": 0
+      }
+    ],
+    "lockTime": 1746464400000,
+    "active": false,
+    "createdAt": 1746461290606,
+    "createdBy": "202732139706318848",
+    "winnerEmoji": "✅",
+    "winnerLabel": "Yes",
+    "closedAt": 1746462146022,
+    "winnerPoints": 5,
+    "loserPoints": 2,
+    "winners": [
+      "dasriel (+5)"
+    ],
+    "losers": [
+      "dasriel (-2)",
+      "dasriel (-2)"
+    ]
+  },
+  "1368986545520115763": {
+    "question": "Vice Underdogs vs. Miami Killers",
+    "options": [
+      {
+        "label": "VU",
+        "emoji": "🇻",
+        "votes": 0
+      },
+      {
+        "label": "MK",
+        "emoji": "Ⓜ️",
+        "votes": 0
+      }
+    ],
+    "lockTime": 1746475200000,
+    "active": false,
+    "createdAt": 1746462227741,
+    "createdBy": "202732139706318848",
+    "winnerEmoji": "Ⓜ️",
+    "winnerLabel": "MK",
+    "closedAt": 1746462662227,
+    "winnerPoints": 3,
+    "loserPoints": 1,
+    "winners": [],
+    "losers": []
+  },
+  "1368986852198973462": {
+    "question": "Vice Underdogs vs. Miami Killers",
+    "options": [
+      {
+        "label": "VU",
+        "emoji": "🇻",
+        "votes": 1
+      },
+      {
+        "label": "MK",
+        "emoji": "Ⓜ️",
+        "votes": 0
+      }
+    ],
+    "lockTime": 1746475200000,
+    "active": false,
+    "createdAt": 1746462300976,
+    "createdBy": "202732139706318848",
+    "winnerEmoji": "🇻",
+    "winnerLabel": "VU",
+    "closedAt": 1746462734839,
+    "winnerPoints": 10,
+    "loserPoints": 2,
+    "winners": [
+      "dasriel (+10)"
+    ],
+    "losers": []
+  },
+  "1368988154526433303": {
+    "question": "Vice Underdogs vs. Miami Killers",
+    "options": [
+      {
+        "label": "VU",
+        "emoji": "🇻",
+        "votes": 1
+      },
+      {
+        "label": "MK",
+        "emoji": "Ⓜ️",
+        "votes": 0
+      }
+    ],
+    "lockTime": 1746475200000,
+    "active": false,
+    "createdAt": 1746462610933,
+    "createdBy": "202732139706318848",
+    "winnerEmoji": "Ⓜ️",
+    "winnerLabel": "MK",
+    "closedAt": 1746462803358,
+    "winnerPoints": 400,
+    "loserPoints": 100,
+    "winners": [],
+    "losers": [
+      "dasriel (-100)"
+    ]
   }
 }
