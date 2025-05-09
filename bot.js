@@ -92,15 +92,16 @@ function parseTimeString(timeStr) {
   );
 }
 
-// Format time nicely
-function formatTime(timestamp) {
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+function formatTime(time){
+              const lockDate = new Date(time);
+            const hours = lockDate.getHours().toString().padStart(2, '0');
+            const minutes = lockDate.getMinutes().toString().padStart(2, '0');
+            const formattedTime = `${hours}:${minutes}`;
+
+            return formattedTime;
 }
+
+
 
 // Load bets data
 function loadActiveBets() {
@@ -1123,8 +1124,8 @@ client.on("interactionCreate", async (interaction) => {
       // Create and update the bet message with results - without displaying all participant results
       const resultEmbed = new EmbedBuilder()
         .setColor(0xff0000) // RED for closed bets
-        .setTitle(`CLOSED: ${match.question}`)
-        .setDescription(`Winning option: **${winLabel}**`)
+        .setTitle(`🏁 ${match.question}`)
+        .setDescription(`Match has ended! Winning option: **${winLabel}**\n Distribution of votes:`)
         .addFields(
           { name: "\u200B", value: "**Betting Options**", inline: false },
           ...match.options.map((opt) => {
@@ -1508,10 +1509,11 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (match.active && !match.lockMessageSent) {
       try {
         const lockedEmbed = EmbedBuilder.from(reaction.message.embeds[0])
-          .setColor(0xffff00) // yellow for locked bets
-          .setTitle(`🔒 LOCKED: ${match.question}`)
-          .setFooter({
-            text: `Betting System`,
+         .setColor(0xff9800) // Orange for locked bets
+              .setTitle(`🔒 LOCKED: ${match.question}`)
+              .setDescription(`Match locked at ${lockTime}, awaiting results...`) // Updated text
+              .setFooter({
+                text: `Betting System`,
           });
 
         await reaction.message.edit({ embeds: [lockedEmbed] });
@@ -1584,9 +1586,14 @@ setInterval(async () => {
           }
 
           if (targetMessage) {
+            // USE THIS parseTimeString IN FUTURE
+            formattedTime = formatTime(lockTime)
+
+
             const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
               .setColor(0xff9800) // Orange for locked bets
-              .setTitle(`🔒 LOCKED: ${match.question}`)
+              .setTitle(`🔒 ${match.question}`)
+              .setDescription(`Match locked at ${formattedTime}, awaiting results...`) // Updated text
               .setFooter({
                 text: `Betting System`,
               });
@@ -1608,6 +1615,6 @@ setInterval(async () => {
       }
     }
   }
-}, 60000); // Check every minute
+}, 5000); // Check 5 sec check
 
 client.login(process.env.TOKEN);

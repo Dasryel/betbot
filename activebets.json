@@ -1,19 +1,25 @@
 {
-  "1369009082207305746": {
-    "question": "Vice Underdogs vs. Miami Killers",
+  "1370376861485629531": {
+    "question": "MVP",
     "options": [
       {
-        "label": "VU",
-        "emoji": "🇻"
+        "label": "aXXo",
+        "emoji": "🇦"
       },
       {
-        "label": "MK",
-        "emoji": "Ⓜ️"
+        "label": "Blitz",
+        "emoji": "🇧"
+      },
+      {
+        "label": "Detonator",
+        "emoji": "🇩"
       }
     ],
-    "lockTime": 1746475200000,
+    "lockTime": 1746793800000,
     "active": true,
-    "createdAt": 1746467600664,
-    "createdBy": "202732139706318848"
+    "createdAt": 1746793706323,
+    "createdBy": "202732139706318848",
+    "lockMessageSent": true,
+    "lockedAt": 1746793835108
   }
 }
