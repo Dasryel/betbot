@@ -1,3 +1,0 @@
-/bet text:Vice Underdogs vs. Miami Killers time:15:00 options:VU :regional_indicator_v: | MK :m: 
-/bet text:MVP time:13:35 options:aXXo :regional_indicator_a: | Blitz :regional_indicator_b: | Detonator :regional_indicator_d: 
-/bet text:VU will reach 200 points time:15:00 options:Yes :white_check_mark: | No :x: 
