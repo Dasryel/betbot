@@ -79,26 +79,17 @@ function hasPermission(member) {
   );
 }
 
-// The improved parseTimeString function
+// Helper: Parse HH:MM string to Date object
 function parseTimeString(timeStr) {
   const now = new Date();
   const [hour, minute] = timeStr.split(":").map(Number);
-  
-  // Create a Date object for today with the specified time
-  const targetTime = new Date(
+  return new Date(
     now.getFullYear(),
     now.getMonth(),
     now.getDate(),
     hour,
     minute
   );
-  
-  // If the target time is already in the past for today, it's invalid
-  if (targetTime < now) {
-    return null; // This will help detect invalid times
-  }
-  
-  return targetTime.getTime(); // Return the timestamp in milliseconds
 }
 
 function formatTime(time){
@@ -1192,14 +1183,13 @@ client.on("interactionCreate", async (interaction) => {
     const timeStr = interaction.options.getString("time");
     const optionStr = interaction.options.getString("options");
 
-   // Improved time parsing
-  const lockTimeMs = parseTimeString(timeStr);
-  if (!lockTimeMs || lockTimeMs <= Date.now()) {
-    return interaction.reply({
-      content: "❗ Invalid or past lock time. Please enter a future time in HH:MM format.",
-      flags: MessageFlags.Ephemeral,
-    });
-  }
+    const lockTime = new Date(parseTimeString(timeStr).getTime());
+    if (isNaN(lockTime) || lockTime < Date.now()) {
+      return interaction.reply({
+        content: "❗ Invalid or past lock time.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
 
     const parsedOptions = optionStr.split("|").map((entry) => {
       const trimmed = entry.trim();
@@ -1276,14 +1266,14 @@ client.on("interactionCreate", async (interaction) => {
       activeBets[sentMessage.id] = {
         question,
         options: parsedOptions,
-        lockTime: lockTimeMs,
+        lockTime: lockTime.getTime(),
         active: true,
         createdAt: Date.now(),
         createdBy: interaction.user.id,
       };
 
       saveActiveBets(activeBets);
-      activeMatches.set(sentMessage.id, lockTimeMs);
+      activeMatches.set(sentMessage.id, lockTime.getTime());
 
       return interaction.editReply({ content: "✅ Bet created!" });
     } catch (error) {
@@ -1513,21 +1503,17 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return reaction.users.remove(user.id);
   }
 
-    const lockTimeMs = Number(lockTime);
-
   // ⏱️ Locked
-   if (Date.now() > lockTimeMs) {
+  if (Date.now() > lockTime) {
     // Update the embed to show it's locked if it hasn't been updated yet
     if (match.active && !match.lockMessageSent) {
       try {
-        const formattedTime = formatTime(lockTimeMs);
-        
         const lockedEmbed = EmbedBuilder.from(reaction.message.embeds[0])
-          .setColor(0xff9800) // Orange for locked bets
-          .setTitle(`🔒 ${match.question}`)
-          .setDescription(`Match locked at ${formattedTime}, awaiting results...`)
-          .setFooter({
-            text: `Betting System`,
+         .setColor(0xff9800) // Orange for locked bets
+              .setTitle(`🔒 LOCKED: ${match.question}`)
+              .setDescription(`Match locked at ${lockTime}, awaiting results...`) // Updated text
+              .setFooter({
+                text: `Betting System`,
           });
 
         await reaction.message.edit({ embeds: [lockedEmbed] });
@@ -1537,8 +1523,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
         match.lockedAt = Date.now();
         activeBets[messageId] = match;
         saveActiveBets(activeBets);
-        
-        console.log(`Locked bet from reaction handler: ${match.question}`);
       } catch (error) {
         console.error("❌ Failed to update locked bet message:", error);
       }
@@ -1567,7 +1551,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 });
 
 // Timer to check for locked bets that need status updates
-// Timer to check for locked bets that need status updates
 setInterval(async () => {
   if (activeMatches.size === 0) return;
 
@@ -1575,23 +1558,42 @@ setInterval(async () => {
   const activeBets = loadActiveBets();
 
   for (const [messageId, lockTime] of activeMatches.entries()) {
-    // Ensure lockTime is treated as a number
-    const lockTimeMs = Number(lockTime);
-    
-    if (now > lockTimeMs) {
+    if (now > lockTime) {
       const match = activeBets[messageId];
       if (match && match.active && !match.lockMessageSent) {
         try {
-          // Find the channel and message (unchanged)
-          // ...
+          // Find the channel and message
+          const guild = client.guilds.cache.first();
+          if (!guild) continue;
+
+          const channels = await guild.channels.fetch();
+          let targetMessage = null;
+
+          for (const [_, channel] of channels) {
+            if (!channel.isTextBased()) continue;
+
+            try {
+              const message = await channel.messages
+                .fetch(messageId)
+                .catch(() => null);
+              if (message) {
+                targetMessage = message;
+                break;
+              }
+            } catch (err) {
+              // Skip if can't access channel or message not found
+            }
+          }
 
           if (targetMessage) {
-            const formattedTime = formatTime(lockTimeMs);
+            // USE THIS parseTimeString IN FUTURE
+            formattedTime = formatTime(lockTime)
+
 
             const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
               .setColor(0xff9800) // Orange for locked bets
               .setTitle(`🔒 ${match.question}`)
-              .setDescription(`Match locked at ${formattedTime}, awaiting results...`)
+              .setDescription(`Match locked at ${formattedTime}, awaiting results...`) // Updated text
               .setFooter({
                 text: `Betting System`,
               });
@@ -1603,8 +1605,6 @@ setInterval(async () => {
             match.lockedAt = now;
             activeBets[messageId] = match;
             saveActiveBets(activeBets);
-            
-            console.log(`Locked bet ${messageId}: ${match.question} at ${formattedTime}`);
           }
         } catch (error) {
           console.error(
@@ -1615,6 +1615,6 @@ setInterval(async () => {
       }
     }
   }
-}, 5000); // Check every 5 seconds
+}, 5000); // Check 5 sec check
 
 client.login(process.env.TOKEN);
