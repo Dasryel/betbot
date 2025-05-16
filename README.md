@@ -31,3 +31,20 @@ node commands.js
 ```
 node bot.js
 ```
+
+# COMMANDS:
+
+/bet <title> <time> <label1 1️⃣ | label2 2️⃣>
+→ Creates a new bet with custom options
+
+/winner <title>
+→ Declares the winner of a bet
+
+/balance
+→ Shows your current betting balance
+
+/top
+→ Displays the top 10 bettors
+
+/assign <role>
+→ Grants a role permission to use /bet and /winner commands
