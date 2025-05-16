@@ -89,16 +89,24 @@ function parseTimeString(timeStr) {
     now.getDate(),
     hour,
     minute
-  );
+  ).getTime();
 }
 
-function formatTime(time){
-              const lockDate = new Date(time);
-            const hours = lockDate.getHours().toString().padStart(2, '0');
-            const minutes = lockDate.getMinutes().toString().padStart(2, '0');
-            const formattedTime = `${hours}:${minutes}`;
+function createDiscordTimestamp(timestamp, format = 't') {
+  // Discord timestamp formats:
+  // t: Short time (e.g., 9:30 PM)
+  // T: Long time (e.g., 9:30:00 PM)
+  // d: Short date (e.g., 07/10/2021)
+  // D: Long date (e.g., July 10, 2021)
+  // f: Short date/time (e.g., July 10, 2021 9:30 PM)
+  // F: Long date/time (e.g., Saturday, July 10, 2021 9:30 PM)
+  // R: Relative time (e.g., 2 months ago, in an hour)
+  
+  return `<t:${Math.floor(timestamp / 1000)}:${format}>`;
+}
 
-            return formattedTime;
+function formatTime(time) {
+  return createDiscordTimestamp(time);
 }
 
 
@@ -1170,119 +1178,122 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
   // --- Slash Command: /bet ---
-  if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
-    // Check if user has permission
-    if (!hasPermission(interaction.member)) {
-      return interaction.reply({
-        content: "❌ You don't have permission to use this command.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
+  // Check if user has permission
+  if (!hasPermission(interaction.member)) {
+    return interaction.reply({
+      content: "❌ You don't have permission to use this command.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
 
-    const question = interaction.options.getString("text");
-    const timeStr = interaction.options.getString("time");
-    const optionStr = interaction.options.getString("options");
+  const question = interaction.options.getString("text");
+  const timeStr = interaction.options.getString("time");
+  const optionStr = interaction.options.getString("options");
 
-    const lockTime = new Date(parseTimeString(timeStr).getTime());
-    if (isNaN(lockTime) || lockTime < Date.now()) {
-      return interaction.reply({
-        content: "❗ Invalid or past lock time.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+  const lockTimestamp = parseTimeString(timeStr);
+  if (isNaN(lockTimestamp) || lockTimestamp < Date.now()) {
+    return interaction.reply({
+      content: "❗ Invalid or past lock time.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
 
-    const parsedOptions = optionStr.split("|").map((entry) => {
-      const trimmed = entry.trim();
+  const parsedOptions = optionStr.split("|").map((entry) => {
+    const trimmed = entry.trim();
 
-      // Handle custom emojis in format <:name:id> or <a:name:id>
-      const customEmojiMatch = trimmed.match(/(.*?)(<a?:.+:\d+>)$/);
-      if (customEmojiMatch) {
-        const label = customEmojiMatch[1].trim();
-        const emoji = customEmojiMatch[2].trim();
-        return label && emoji ? { label, emoji } : null;
-      }
-
-      // Original logic for standard emojis
-      const lastSpace = trimmed.lastIndexOf(" ");
-      if (lastSpace === -1) return null;
-      const label = trimmed.substring(0, lastSpace).trim();
-      const emoji = trimmed.substring(lastSpace + 1).trim();
+    // Handle custom emojis in format <:name:id> or <a:name:id>
+    const customEmojiMatch = trimmed.match(/(.*?)(<a?:.+:\d+>)$/);
+    if (customEmojiMatch) {
+      const label = customEmojiMatch[1].trim();
+      const emoji = customEmojiMatch[2].trim();
       return label && emoji ? { label, emoji } : null;
+    }
+
+    // Original logic for standard emojis
+    const lastSpace = trimmed.lastIndexOf(" ");
+    if (lastSpace === -1) return null;
+    const label = trimmed.substring(0, lastSpace).trim();
+    const emoji = trimmed.substring(lastSpace + 1).trim();
+    return label && emoji ? { label, emoji } : null;
+  });
+
+  if (parsedOptions.some((opt) => opt === null)) {
+    return interaction.reply({
+      content: "❗ Invalid format for options. Use: `Label Emoji|...`",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    // Generate Discord timestamp for the lock time
+    const discordTimestamp = createDiscordTimestamp(lockTimestamp);
+
+    // Create a nice embed for the bet
+    const betEmbed = new EmbedBuilder()
+      .setColor(0x3498db) // Nice blue color
+      .setTitle(`${question}`)
+      .setDescription(
+        `🔒 Betting locks at ${discordTimestamp}\nReact with one of the options below to place your bet!`
+      )
+      .addFields(
+        { name: "\u200B", value: "**Options**", inline: false },
+        ...parsedOptions.map((opt) => {
+          return {
+            name: `${opt.emoji} ${opt.label}`,
+            value: "\u200B",
+            inline: true,
+          };
+        })
+      )
+      .setFooter({
+        text: `Betting System`,
+      });
+
+    const sentMessage = await interaction.channel.send({
+      embeds: [betEmbed],
     });
 
-    if (parsedOptions.some((opt) => opt === null)) {
-      return interaction.reply({
-        content: "❗ Invalid format for options. Use: `Label Emoji|...`",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+    // Add reactions for voting
+    for (const opt of parsedOptions) {
+      // Check if this is a custom emoji (in <:name:id> format)
+      const customEmojiMatch =
+        opt.emoji.match(/<:(.+):(\d+)>/) || opt.emoji.match(/<a:(.+):(\d+)>/);
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    try {
-      // Create a nice embed for the bet
-      const betEmbed = new EmbedBuilder()
-        .setColor(0x3498db) // Nice blue color
-        .setTitle(`${question}`)
-        .setDescription(
-          `🔒 Voting locks at ${timeStr}\nReact with one of the options below to place your bet!`
-        )
-        .addFields(
-          { name: "\u200B", value: "**Options**", inline: false },
-          ...parsedOptions.map((opt) => {
-            return {
-              name: `${opt.emoji} ${opt.label}`,
-              value: "\u200B",
-              inline: true,
-            };
-          })
-        )
-        .setFooter({
-          text: `Betting System`,
-        });
-
-      const sentMessage = await interaction.channel.send({
-        embeds: [betEmbed],
-      });
-
-      // Add reactions for voting
-      for (const opt of parsedOptions) {
-        // Check if this is a custom emoji (in <:name:id> format)
-        const customEmojiMatch =
-          opt.emoji.match(/<:(.+):(\d+)>/) || opt.emoji.match(/<a:(.+):(\d+)>/);
-
-        if (customEmojiMatch) {
-          // For custom emojis, we need the ID
-          const emojiId = customEmojiMatch[2];
-          await sentMessage.react(emojiId);
-        } else {
-          // Regular unicode emoji
-          await sentMessage.react(opt.emoji);
-        }
+      if (customEmojiMatch) {
+        // For custom emojis, we need the ID
+        const emojiId = customEmojiMatch[2];
+        await sentMessage.react(emojiId);
+      } else {
+        // Regular unicode emoji
+        await sentMessage.react(opt.emoji);
       }
-
-      // Only store minimal needed data in active bets
-      const activeBets = loadActiveBets();
-      activeBets[sentMessage.id] = {
-        question,
-        options: parsedOptions,
-        lockTime: lockTime.getTime(),
-        active: true,
-        createdAt: Date.now(),
-        createdBy: interaction.user.id,
-      };
-
-      saveActiveBets(activeBets);
-      activeMatches.set(sentMessage.id, lockTime.getTime());
-
-      return interaction.editReply({ content: "✅ Bet created!" });
-    } catch (error) {
-      console.error("❌ Failed to create bet:", error);
-      return interaction.editReply({
-        content: "❌ Something went wrong while creating the bet.",
-      });
     }
+
+    // Only store minimal needed data in active bets
+    const activeBets = loadActiveBets();
+    activeBets[sentMessage.id] = {
+      question,
+      options: parsedOptions,
+      lockTime: lockTimestamp,
+      active: true,
+      createdAt: Date.now(),
+      createdBy: interaction.user.id,
+    };
+
+    saveActiveBets(activeBets);
+    activeMatches.set(sentMessage.id, lockTimestamp);
+
+    return interaction.editReply({ content: "✅ Bet created!" });
+  } catch (error) {
+    console.error("❌ Failed to create bet:", error);
+    return interaction.editReply({
+      content: "❌ Something went wrong while creating the bet.",
+    });
   }
+}
 
   // --- Slash Command: /winner ---
   if (
@@ -1511,7 +1522,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
         const lockedEmbed = EmbedBuilder.from(reaction.message.embeds[0])
   .setColor(0xff9800) // Orange for locked bets
               .setTitle(`🔒 ${match.question}`)
-              .setDescription(`Match locked at ${formattedTime}, awaiting results...`) // Updated text
+              .setDescription(`Match locked at ${formattedTime}, awaiting results....`) // Updated text
               .setFooter({
                 text: `Betting System`,
           });
@@ -1550,7 +1561,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 });
 
-// Timer to check for locked bets that need status updates
 setInterval(async () => {
   if (activeMatches.size === 0) return;
 
@@ -1586,14 +1596,13 @@ setInterval(async () => {
           }
 
           if (targetMessage) {
-            // USE THIS parseTimeString IN FUTURE
-            formattedTime = formatTime(lockTime)
-
+            // Use Discord timestamp format for the locked time
+            const discordTimestamp = createDiscordTimestamp(lockTime);
 
             const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
               .setColor(0xff9800) // Orange for locked bets
               .setTitle(`🔒 ${match.question}`)
-              .setDescription(`Match locked at ${formattedTime}, awaiting results...`) // Updated text
+              .setDescription(`Bet locked at ${discordTimestamp}, awaiting results....`) // Updated text
               .setFooter({
                 text: `Betting System`,
               });
