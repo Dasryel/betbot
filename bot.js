@@ -1509,9 +1509,9 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (match.active && !match.lockMessageSent) {
       try {
         const lockedEmbed = EmbedBuilder.from(reaction.message.embeds[0])
-         .setColor(0xff9800) // Orange for locked bets
-              .setTitle(`🔒 LOCKED: ${match.question}`)
-              .setDescription(`Match locked at ${lockTime}, awaiting results...`) // Updated text
+  .setColor(0xff9800) // Orange for locked bets
+              .setTitle(`🔒 ${match.question}`)
+              .setDescription(`Match locked at ${formattedTime}, awaiting results...`) // Updated text
               .setFooter({
                 text: `Betting System`,
           });
