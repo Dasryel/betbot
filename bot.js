@@ -1514,32 +1514,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return reaction.users.remove(user.id);
   }
 
-  // ⏱️ Locked
-  if (Date.now() > lockTime) {
-    // Update the embed to show it's locked if it hasn't been updated yet
-    if (match.active && !match.lockMessageSent) {
-      try {
-        const lockedEmbed = EmbedBuilder.from(reaction.message.embeds[0])
-  .setColor(0xff9800) // Orange for locked bets
-              .setTitle(`🔒 ${match.question}`)
-              .setDescription(`Match locked at ${formattedTime}, awaiting results....`) // Updated text
-              .setFooter({
-                text: `Betting System`,
-          });
-
-        await reaction.message.edit({ embeds: [lockedEmbed] });
-
-        // Mark that we've sent the lock message
-        match.lockMessageSent = true;
-        match.lockedAt = Date.now();
-        activeBets[messageId] = match;
-        saveActiveBets(activeBets);
-      } catch (error) {
-        console.error("❌ Failed to update locked bet message:", error);
-      }
-    }
-    return reaction.users.remove(user.id);
-  }
+ 
 
   const allReactions = reaction.message.reactions.cache;
 
