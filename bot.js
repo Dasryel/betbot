@@ -1293,7 +1293,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
       .setColor(0x3498db) // Nice blue color
       .setTitle(`${question}`)
       .setDescription(
-        `🔒 Betting locks at ${discordTimestamp} (TEST)\nReact with one of the options below to place your bet!`
+        `🔒 Betting locks at ${discordTimestamp}\nReact with one of the options below to place your bet!`
       )
       .addFields(
         { name: "\u200B", value: "**Options**", inline: false },
@@ -1623,8 +1623,6 @@ setInterval(async () => {
           const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
           if (!targetMessage) continue;
 
-          // Log to the same channel
-          await channel.send(`🔒 Locking bet: **${match.question}**`);
 
           const discordTimestamp = createDiscordTimestamp(now);
           await validateBetReactions(messageId, lockTime);
