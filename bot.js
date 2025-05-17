@@ -1339,6 +1339,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
       createdAt: Date.now(),
       createdBy: interaction.user.id,
       channelId: interaction.channel.id,
+      guildId: interaction.guild.id,
     };
 
     saveActiveBets(activeBets);
@@ -1613,22 +1614,22 @@ setInterval(async () => {
 
       if (match && match.active && !match.lockMessageSent) {
         try {
-          const guild = client.guilds.cache.first();
+          const guild = client.guilds.cache.get(match.guildId);
           if (!guild) continue;
 
-          // ✅ Use saved channel ID instead of scanning all
-          const targetChannel = await guild.channels.fetch(match.channelId).catch(() => null);
-          if (!targetChannel || !targetChannel.isTextBased()) continue;
+          const channel = await guild.channels.fetch(match.channelId).catch(() => null);
+          if (!channel || !channel.isTextBased()) continue;
 
-          const targetMessage = await targetChannel.messages.fetch(messageId).catch(() => null);
-          if (!targetMessage) {
-            console.error(`Message ${messageId} not found in channel ${match.channelId}.`);
-            continue;
+          const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
+          if (!targetMessage) continue;
+
+          // Send you a DM
+          const dev = await client.users.fetch("YOUR_DISCORD_ID_HERE").catch(() => null);
+          if (dev) {
+            dev.send(`🔒 Locking bet: **${match.question}**`);
           }
 
-          console.log(`🔒 Locking bet: ${match.question}`);
           const discordTimestamp = createDiscordTimestamp(now);
-
           await validateBetReactions(messageId, lockTime);
 
           const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
@@ -1645,7 +1646,10 @@ setInterval(async () => {
           saveNeeded = true;
 
         } catch (error) {
-          console.error(`❌ Failed to update locked bet message ${messageId}:`, error);
+          const dev = await client.users.fetch("202732139706318848").catch(() => null);
+          if (dev) {
+            dev.send(`❌ Failed to update locked bet message \`${messageId}\`\n\`\`\`${error}\`\`\``);
+          }
         }
       }
     }
@@ -1655,5 +1659,6 @@ setInterval(async () => {
     saveActiveBets(activeBets);
   }
 }, 5000);
+
 
 client.login(process.env.TOKEN);
