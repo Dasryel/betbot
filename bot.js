@@ -1623,11 +1623,8 @@ setInterval(async () => {
           const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
           if (!targetMessage) continue;
 
-          // Send you a DM
-          const dev = await client.users.fetch("YOUR_DISCORD_ID_HERE").catch(() => null);
-          if (dev) {
-            dev.send(`🔒 Locking bet: **${match.question}**`);
-          }
+          // Log to the same channel
+          await channel.send(`🔒 Locking bet: **${match.question}**`);
 
           const discordTimestamp = createDiscordTimestamp(now);
           await validateBetReactions(messageId, lockTime);
@@ -1646,9 +1643,12 @@ setInterval(async () => {
           saveNeeded = true;
 
         } catch (error) {
-          const dev = await client.users.fetch("202732139706318848").catch(() => null);
-          if (dev) {
-            dev.send(`❌ Failed to update locked bet message \`${messageId}\`\n\`\`\`${error}\`\`\``);
+          const guild = client.guilds.cache.get(match.guildId);
+          if (!guild) continue;
+
+          const channel = await guild.channels.fetch(match.channelId).catch(() => null);
+          if (channel && channel.isTextBased()) {
+            await channel.send(`❌ Failed to update locked bet message \`${messageId}\`:\n\`\`\`${error.message || error}\`\`\``);
           }
         }
       }
@@ -1659,6 +1659,7 @@ setInterval(async () => {
     saveActiveBets(activeBets);
   }
 }, 5000);
+
 
 
 client.login(process.env.TOKEN);
