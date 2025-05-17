@@ -188,14 +188,14 @@ function getRandomItem(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
 
-// Add this function near your other helper functions
-// Validates reactions on a bet message and removes invalid ones
 async function validateBetReactions(messageId, lockTime) {
   try {
     // Load match data from file
     const activeBets = loadActiveBets();
     const match = activeBets[messageId];
     if (!match || !match.options) return;
+
+    console.log(`Validating reactions for bet: ${match.question}`);
 
     // Find the message across all guilds and channels
     const guild = client.guilds.cache.first();
@@ -227,13 +227,13 @@ async function validateBetReactions(messageId, lockTime) {
       return;
     }
 
-    console.log(`Validating reactions for bet: ${match.question}`);
-
     // Get list of valid emojis using our helper functions
     const allowedEmojis = match.options.map((opt) => normalizeEmoji(opt.emoji));
 
     // A map to track which users have which valid reactions
     const userReactions = new Map();
+    const now = Date.now();
+    const isLocked = now > lockTime;
 
     // First pass - collect all valid reactions and remove invalid ones
     for (const [emojiKey, reaction] of targetMessage.reactions.cache) {
@@ -270,6 +270,16 @@ async function validateBetReactions(messageId, lockTime) {
 
       for (const [userId, user] of users) {
         if (!user.bot) {
+          // If bet is locked and this isn't one of the user's reactions before the lock,
+          // remove it (no new bets after lock)
+          if (isLocked && match.lockedAt && !match.lockedUserReactions) {
+            // If this is the first time checking after lock, just record reactions
+            // but don't remove - we don't have historical data
+            if (!match.lockedUserReactions) {
+              match.lockedUserReactions = {};
+            }
+          }
+
           if (!userReactions.has(userId)) {
             userReactions.set(userId, []);
           }
@@ -283,9 +293,6 @@ async function validateBetReactions(messageId, lockTime) {
     }
 
     // Second pass - ensure each user only has one reaction
-    const now = Date.now();
-    const isLocked = now > lockTime;
-
     // Only process multiple reactions if the bet isn't locked yet
     if (!isLocked) {
       for (const [userId, reactions] of userReactions) {
@@ -315,6 +322,32 @@ async function validateBetReactions(messageId, lockTime) {
     }
 
     console.log(`Finished validating reactions for bet: ${match.question}`);
+    
+    // Count votes for stats
+    for (const option of match.options) {
+      option.votes = 0; // Reset vote count
+    }
+
+    // Count votes from reactions
+    for (const [emojiKey, reaction] of targetMessage.reactions.cache) {
+      // Find the corresponding option by comparing normalized emojis
+      const option = match.options.find((opt) =>
+        doEmojisMatch(opt.emoji, reaction.emoji)
+      );
+
+      if (option) {
+        // Count non-bot users who reacted
+        const users = await reaction.users.fetch();
+        option.votes = Array.from(users.values()).filter(
+          (user) => !user.bot
+        ).length;
+      }
+    }
+    
+    // Update the vote counts in the stored data
+    activeBets[messageId] = match;
+    saveActiveBets(activeBets);
+    
   } catch (error) {
     console.error(
       `Error validating reactions for message ${messageId}:`,
@@ -327,16 +360,40 @@ async function validateBetReactions(messageId, lockTime) {
 client.once("ready", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
+  // Clear the active matches map and rebuild it from file
+  activeMatches.clear();
+  
   const activeBets = loadActiveBets();
+  const now = Date.now();
+  let saveNeeded = false;
+
+  console.log(`Found ${Object.keys(activeBets).length} bets in the database`);
 
   for (const [messageId, match] of Object.entries(activeBets)) {
-    if (match.active) {
-      activeMatches.set(messageId, match.lockTime);
-
-      // Validate reactions on this bet
-      console.log(`Validating bet ${messageId}: ${match.question}`);
-      await validateBetReactions(messageId, match.lockTime);
+    if (!match.active) {
+      console.log(`Skipping inactive bet: ${match.question}`);
+      continue;
     }
+
+    console.log(`Processing active bet: ${match.question} (Lock time: ${new Date(match.lockTime).toLocaleTimeString()})`);
+    
+    // Add to active matches map
+    activeMatches.set(messageId, match.lockTime);
+    
+    // Check if this bet should be marked as locked
+    if (now > match.lockTime && !match.lockMessageSent) {
+      console.log(`Bet should be locked: ${match.question}`);
+      // This bet should be locked but isn't marked as such yet
+      // We'll let the interval function handle the actual locking
+    }
+
+    // Validate reactions on this bet
+    console.log(`Validating bet ${messageId}: ${match.question}`);
+    await validateBetReactions(messageId, match.lockTime);
+  }
+
+  if (saveNeeded) {
+    saveActiveBets(activeBets);
   }
 
   console.log(`📌 Restored ${activeMatches.size} active bet(s)`);
@@ -1463,6 +1520,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
   }
 });
 
+// Modify the messageReactionAdd event handler to check if the bet is locked properly
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
 
@@ -1486,13 +1544,19 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   const messageId = reaction.message.id;
-  const lockTime = activeMatches.get(messageId);
-  if (!lockTime) return;
-
-  // Load match data from file
   const activeBets = loadActiveBets();
   const match = activeBets[messageId];
-  if (!match || !match.options) return;
+  
+  // Check for locktime directly from the match data, not just activeMatches map
+  if (!match || !match.active) return;
+  
+  // Very important: Check if the bet is locked! If current time is past lockTime, remove the reaction
+  const now = Date.now();
+  if (now > match.lockTime) {
+    console.log(`Removing reaction from ${user.username} because the bet is locked`);
+    await reaction.users.remove(user.id);
+    return;
+  }
 
   // Get list of valid emojis using our helper functions
   const allowedEmojis = match.options.map((opt) => normalizeEmoji(opt.emoji));
@@ -1514,8 +1578,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
     return reaction.users.remove(user.id);
   }
 
- 
-
+  // Ensure user only has one reaction (remove other reactions)
   const allReactions = reaction.message.reactions.cache;
 
   for (const [, r] of allReactions) {
@@ -1536,23 +1599,28 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 });
 
+// Improved interval function to better handle locked bets
 setInterval(async () => {
   if (activeMatches.size === 0) return;
 
   const now = Date.now();
   const activeBets = loadActiveBets();
+  let saveNeeded = false;
 
   for (const [messageId, lockTime] of activeMatches.entries()) {
+    // Check if this bet should be locked now
     if (now > lockTime) {
       const match = activeBets[messageId];
+      
       if (match && match.active && !match.lockMessageSent) {
         try {
-          // Find the channel and message
+          // Find the message across guilds and channels
           const guild = client.guilds.cache.first();
           if (!guild) continue;
 
           const channels = await guild.channels.fetch();
           let targetMessage = null;
+          let targetChannel = null;
 
           for (const [_, channel] of channels) {
             if (!channel.isTextBased()) continue;
@@ -1563,32 +1631,47 @@ setInterval(async () => {
                 .catch(() => null);
               if (message) {
                 targetMessage = message;
+                targetChannel = channel;
                 break;
               }
             } catch (err) {
               // Skip if can't access channel or message not found
+              continue;
             }
           }
 
           if (targetMessage) {
-            // Use Discord timestamp format for the locked time
+            console.log(`🔒 Locking bet: ${match.question}`);
+            
+            // Use Discord timestamp for the locked time
             const discordTimestamp = createDiscordTimestamp(lockTime);
 
+            // First, validate all existing reactions to make sure they follow the rules
+            await validateBetReactions(messageId, lockTime);
+
+            // Create the locked embed with orange color
             const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
               .setColor(0xff9800) // Orange for locked bets
               .setTitle(`🔒 ${match.question}`)
-              .setDescription(`Bet locked at ${discordTimestamp}, awaiting results....`) // Updated text
+              .setDescription(`Bet locked at ${discordTimestamp}, awaiting results. No new bets can be placed.`)
               .setFooter({
-                text: `Betting System`,
+                text: `Betting System • Locked`,
               });
 
+            // Update the original message
             await targetMessage.edit({ embeds: [lockedEmbed] });
 
-            // Mark that we've sent the lock message
+            // Send an additional notification to the channel that the bet is locked
+            await targetChannel.send({
+              content: `⚠️ **Betting is now locked for "${match.question}"**\nUse \`/winner\` to select the winning option.`,
+              allowedMentions: { parse: [] } // Don't ping anyone
+            });
+
+            // Mark that we've sent the lock message and update lock status
             match.lockMessageSent = true;
             match.lockedAt = now;
             activeBets[messageId] = match;
-            saveActiveBets(activeBets);
+            saveNeeded = true;
           }
         } catch (error) {
           console.error(
@@ -1599,6 +1682,11 @@ setInterval(async () => {
       }
     }
   }
-}, 5000); // Check 5 sec check
+
+  // Only save if we made changes
+  if (saveNeeded) {
+    saveActiveBets(activeBets);
+  }
+}, 5000); // Check every 5 seconds
 
 client.login(process.env.TOKEN);
