@@ -1293,7 +1293,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
       .setColor(0x3498db) // Nice blue color
       .setTitle(`${question}`)
       .setDescription(
-        `🔒 Betting locks at ${discordTimestamp}\nReact with one of the options below to place your bet!`
+        `🔒 Betting locks at ${discordTimestamp} (TEST)\nReact with one of the options below to place your bet!`
       )
       .addFields(
         { name: "\u200B", value: "**Options**", inline: false },
@@ -1338,6 +1338,7 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
       active: true,
       createdAt: Date.now(),
       createdBy: interaction.user.id,
+      channelId: interaction.channel.id,
     };
 
     saveActiveBets(activeBets);
@@ -1599,7 +1600,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 });
 
-// Improved interval function to better handle locked bets
 setInterval(async () => {
   if (activeMatches.size === 0) return;
 
@@ -1608,85 +1608,52 @@ setInterval(async () => {
   let saveNeeded = false;
 
   for (const [messageId, lockTime] of activeMatches.entries()) {
-    // Check if this bet should be locked now
     if (now > lockTime) {
       const match = activeBets[messageId];
-      
+
       if (match && match.active && !match.lockMessageSent) {
         try {
-          // Find the message across guilds and channels
           const guild = client.guilds.cache.first();
           if (!guild) continue;
 
-          const channels = await guild.channels.fetch();
-          let targetMessage = null;
-          let targetChannel = null;
+          // ✅ Use saved channel ID instead of scanning all
+          const targetChannel = await guild.channels.fetch(match.channelId).catch(() => null);
+          if (!targetChannel || !targetChannel.isTextBased()) continue;
 
-          for (const [_, channel] of channels) {
-            if (!channel.isTextBased()) continue;
-
-            try {
-              const message = await channel.messages
-                .fetch(messageId)
-                .catch(() => null);
-              if (message) {
-                targetMessage = message;
-                targetChannel = channel;
-                break;
-              }
-            } catch (err) {
-              // Skip if can't access channel or message not found
-              continue;
-            }
+          const targetMessage = await targetChannel.messages.fetch(messageId).catch(() => null);
+          if (!targetMessage) {
+            console.error(`Message ${messageId} not found in channel ${match.channelId}.`);
+            continue;
           }
 
-          if (targetMessage) {
-            console.log(`🔒 Locking bet: ${match.question}`);
-            
-            // Use Discord timestamp for the locked time
-            const discordTimestamp = createDiscordTimestamp(lockTime);
+          console.log(`🔒 Locking bet: ${match.question}`);
+          const discordTimestamp = createDiscordTimestamp(now);
 
-            // First, validate all existing reactions to make sure they follow the rules
-            await validateBetReactions(messageId, lockTime);
+          await validateBetReactions(messageId, lockTime);
 
-            // Create the locked embed with orange color
-            const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
-              .setColor(0xff9800) // Orange for locked bets
-              .setTitle(`🔒 ${match.question}`)
-              .setDescription(`Bet locked at ${discordTimestamp}, awaiting results. No new bets can be placed.`)
-              .setFooter({
-                text: `Betting System • Locked`,
-              });
+          const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
+            .setColor(0xff9800)
+            .setTitle(`🔒 ${match.question}`)
+            .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...`)
+            .setFooter({ text: `Betting System` });
 
-            // Update the original message
-            await targetMessage.edit({ embeds: [lockedEmbed] });
+          await targetMessage.edit({ embeds: [lockedEmbed] });
 
-            // Send an additional notification to the channel that the bet is locked
-            await targetChannel.send({
-              content: `⚠️ **Betting is now locked for "${match.question}"**\nUse \`/winner\` to select the winning option.`,
-              allowedMentions: { parse: [] } // Don't ping anyone
-            });
+          match.lockMessageSent = true;
+          match.lockedAt = now;
+          activeBets[messageId] = match;
+          saveNeeded = true;
 
-            // Mark that we've sent the lock message and update lock status
-            match.lockMessageSent = true;
-            match.lockedAt = now;
-            activeBets[messageId] = match;
-            saveNeeded = true;
-          }
         } catch (error) {
-          console.error(
-            `❌ Failed to update locked bet message ${messageId}:`,
-            error
-          );
+          console.error(`❌ Failed to update locked bet message ${messageId}:`, error);
         }
       }
     }
   }
 
-  // Only save if we made changes
   if (saveNeeded) {
     saveActiveBets(activeBets);
   }
-}, 5000); // Check every 5 seconds
+}, 5000);
 
 client.login(process.env.TOKEN);
