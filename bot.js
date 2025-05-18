@@ -1467,35 +1467,31 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
   }
 }
 
-  // --- Slash Command: /winner ---
-  if (
-    interaction.isChatInputCommand() &&
-    interaction.commandName === "winner"
-  ) {
-    // Check if user has permission
-    if (!hasPermission(interaction.member)) {
-      return interaction.reply({
-        content: "❌ You don't have permission to use this command.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+ // --- Slash Command: /winner ---
+if (
+  interaction.isChatInputCommand() &&
+  interaction.commandName === "winner"
+) {
+  // Check if user has permission
+  if (!hasPermission(interaction.member)) {
+    return interaction.reply({
+      content: "❌ You don't have permission to use this command.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
 
-    const selectedMatchId = interaction.options.getString("match");
-    const activeBets = loadActiveBets();
-    const match = activeBets[selectedMatchId];
+  const selectedMatchId = interaction.options.getString("match");
+  const activeBets = loadActiveBets();
+  const match = activeBets[selectedMatchId];
 
-    if (!match || !match.active) {
-      return interaction.reply({
-        content: "❌ Invalid or inactive match selected.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
+  if (!match || !match.active) {
+    return interaction.reply({
+      content: "❌ Invalid or inactive match selected.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
 
-
-    //---------
-
-
-      // Create buttons for each option, but distribute across multiple action rows if needed
+  // Create buttons for each option, but distribute across multiple action rows if needed
   const rows = [];
   let currentRow = new ActionRowBuilder();
   let currentRowComponents = 0;
@@ -1512,8 +1508,9 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
     // Add the button to the current row
     currentRow.addComponents(
       new ButtonBuilder()
-        .setCustomId(`winner-${selectedMatchId}_${index}`)
-        .setLabel(option.name)
+        .setCustomId(`winner-${selectedMatchId}-${index}`)
+        .setLabel(option.label)
+        .setEmoji(option.emoji)
         .setStyle(ButtonStyle.Primary)
     );
     
@@ -1525,14 +1522,12 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
     rows.push(currentRow);
   }
 
-
-    return interaction.reply({
-      content: `🏆 Select the winner for:\n**${match.question}**`,
-      components: [row],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-
+  return interaction.reply({
+    content: `🏆 Select the winner for:\n**${match.question}**`,
+    components: rows,  
+    flags: MessageFlags.Ephemeral,
+  });
+}
   // --- Slash Command: /top ---
   if (interaction.isChatInputCommand() && interaction.commandName === "top") {
     try {
