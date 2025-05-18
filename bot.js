@@ -1491,15 +1491,40 @@ if (interaction.isChatInputCommand() && interaction.commandName === "bet") {
       });
     }
 
-    const buttons = match.options.map((opt, index) =>
+
+    //---------
+
+
+      // Create buttons for each option, but distribute across multiple action rows if needed
+  const rows = [];
+  let currentRow = new ActionRowBuilder();
+  let currentRowComponents = 0;
+  const maxComponentsPerRow = 5;
+
+  match.options.forEach((option, index) => {
+    // If the current row has reached the maximum number of components, create a new row
+    if (currentRowComponents >= maxComponentsPerRow) {
+      rows.push(currentRow);
+      currentRow = new ActionRowBuilder();
+      currentRowComponents = 0;
+    }
+
+    // Add the button to the current row
+    currentRow.addComponents(
       new ButtonBuilder()
-        .setCustomId(`winner-${selectedMatchId}-${index}`)
-        .setLabel(opt.label)
-        .setEmoji(opt.emoji)
+        .setCustomId(`winner-${selectedMatchId}_${index}`)
+        .setLabel(option.name)
         .setStyle(ButtonStyle.Primary)
     );
+    
+    currentRowComponents++;
+  });
 
-    const row = new ActionRowBuilder().addComponents(buttons);
+  // Add the last row if it has any components
+  if (currentRowComponents > 0) {
+    rows.push(currentRow);
+  }
+
 
     return interaction.reply({
       content: `🏆 Select the winner for:\n**${match.question}**`,
