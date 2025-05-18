@@ -188,6 +188,108 @@ function getRandomItem(array) {
   return array[Math.floor(Math.random() * array.length)];
 }
 
+// Calculate suggested point values based on odds and bet type
+function calculatePointSuggestions(options) {
+  // Bail early if there are no options or votes
+  if (!options || options.length === 0) {
+    return { winnerPoints: 20, loserPoints: 5 }; // Default values
+  }
+  
+  // Get total votes across all options
+  const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
+  
+  if (totalVotes === 0) {
+    return { winnerPoints: 20, loserPoints: 5 }; // Default if no votes
+  }
+  
+  // Calculate the odds for each option (as a decimal: 0.XX)
+  options.forEach(option => {
+    option.odds = (option.votes || 0) / totalVotes;
+  });
+  
+  // Find the winning option's odds
+  const winningOptionOdds = options.find(opt => opt.isWinner)?.odds || 0;
+  
+  // Count number of options with votes
+  const activeOptions = options.filter(opt => (opt.votes || 0) > 0).length;
+  
+  // Determine bet type based on number of options
+  let betType = "match"; // Default for 2 options
+  if (options.length >= 5) {
+    betType = "mvp"; // Many options suggests MVP bet
+  } else if (options.length > 2) {
+    betType = "custom"; // 3-4 options suggest custom bet
+  }
+  
+  // Calculate winner points based on odds and bet type
+  let winnerPoints;
+  
+  if (winningOptionOdds === 0) {
+    // Edge case - use defaults if winning option has no votes
+    winnerPoints = getBetTypeDefaults(betType).winnerPoints;
+  } else {
+    // Base calculation - lower odds = higher payout
+    winnerPoints = Math.round(7 / Math.sqrt(winningOptionOdds));
+    
+    // Apply bet type specific adjustments
+    switch (betType) {
+      case "match":
+        // Standard match betting (2 options)
+        winnerPoints = Math.round(winnerPoints * 1.0);
+        break;
+      case "mvp":
+        // MVP betting has more options and should have higher rewards
+        // Adjust based on number of options (typically 6)
+        const mvpMultiplier = Math.sqrt(activeOptions / 2);
+        winnerPoints = Math.round(winnerPoints * mvpMultiplier * 1.2); // Extra bonus for MVP bets
+        break;
+      case "custom":
+        // Custom bets - similar to match betting but slightly higher rewards for engagement
+        winnerPoints = Math.round(winnerPoints * 1.1);
+        break;
+    }
+    
+    // Ensure minimum points based on bet type
+    const minPoints = getBetTypeDefaults(betType).winnerPoints / 2;
+    winnerPoints = Math.max(minPoints, winnerPoints);
+  }
+  
+  // Calculate loser points - scaled down from winner points
+  let loserPoints;
+  
+  if (betType === "match" || (betType === "custom" && activeOptions <= 2)) {
+    // For binary choices, keep the penalty moderate
+    loserPoints = Math.round(winnerPoints / 4);
+  } else if (betType === "mvp") {
+    // For MVP bets (many options), reduce penalty significantly
+    // The more options there are, the lower the penalty should be
+    loserPoints = Math.round(winnerPoints / (5 + (activeOptions - 2) / 2));
+  } else {
+    // For other multi-option bets
+    loserPoints = Math.round(winnerPoints / (4 + (activeOptions - 2) / 2));
+  }
+  
+  // Ensure minimum penalty based on bet type
+  const minPenalty = getBetTypeDefaults(betType).loserPoints / 2;
+  loserPoints = Math.max(minPenalty, loserPoints);
+  
+  return { winnerPoints, loserPoints };
+}
+
+// Helper function to get default points based on bet type
+function getBetTypeDefaults(betType) {
+  switch (betType) {
+    case "match":
+      return { winnerPoints: 20, loserPoints: 5 };
+    case "mvp":
+      return { winnerPoints: 30, loserPoints: 3 };
+    case "custom":
+      return { winnerPoints: 25, loserPoints: 5 };
+    default:
+      return { winnerPoints: 20, loserPoints: 5 };
+  }
+}
+
 async function validateBetReactions(messageId, lockTime) {
   try {
     // Load match data from file
@@ -601,7 +703,7 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
 
-  if (interaction.isButton() && interaction.customId.startsWith("winner-")) {
+ if (interaction.isButton() && interaction.customId.startsWith("winner-")) {
     const [, messageId, index] = interaction.customId.split("-");
     const activeBets = loadActiveBets();
     const match = activeBets[messageId];
@@ -610,12 +712,19 @@ client.on("interactionCreate", async (interaction) => {
     if (!match || !selectedOption) {
       return interaction.reply({
         content: "❌ Could not find the selected bet or option.",
-        flags: 64,
+        ephemeral: true,
       });
     }
 
     const wEmoji = selectedOption.emoji;
-    const betId = messageId;
+    
+    // Mark the winning option for our calculations
+    match.options.forEach((opt, idx) => {
+      opt.isWinner = (idx === parseInt(index));
+    });
+    
+    // Calculate suggested point values based on odds
+    const { winnerPoints, loserPoints } = calculatePointSuggestions(match.options);
 
     const modal = new ModalBuilder()
       .setCustomId(`award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
@@ -624,14 +733,18 @@ client.on("interactionCreate", async (interaction) => {
     const winnerInput = new TextInputBuilder()
       .setCustomId("winner-points")
       .setLabel("Points for Winners")
+      .setPlaceholder(`Suggested: ${winnerPoints} points`)
       .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+      .setRequired(true)
+      .setValue(winnerPoints.toString());
 
     const looserInput = new TextInputBuilder()
       .setCustomId("looser-points")
       .setLabel("Points to Subtract from Losers")
+      .setPlaceholder(`Suggested: ${loserPoints} points`)
       .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+      .setRequired(true)
+      .setValue(loserPoints.toString());
 
     const row1 = new ActionRowBuilder().addComponents(winnerInput);
     const row2 = new ActionRowBuilder().addComponents(looserInput);

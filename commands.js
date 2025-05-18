@@ -20,7 +20,7 @@ const commands = [
     .addStringOption((option) =>
       option
         .setName("time")
-        .setDescription("Lock time (HH:MM, 24-hour) Time MUST BE in Netherlands timezone (GMT +2:00")
+        .setDescription("Lock time (HH:MM, 24-hour) Time MUST BE in Netherland's timezone (GMT +2:00)")
         .setRequired(true)
     )
     .addStringOption((option) =>
@@ -65,12 +65,12 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("balance")
-    .setDescription("View or modify a user's point balance")
+    .setDescription("View a user's point balance")
     .setDMPermission(false)
     .addUserOption((option) =>
       option
         .setName("user")
-        .setDescription("The user whose balance you want to check or modify")
+        .setDescription("The user whose balance you want to check")
         .setRequired(true)
     )
     .toJSON(),
