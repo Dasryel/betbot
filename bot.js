@@ -335,7 +335,6 @@ function displayBettingOdds(options) {
 }
 
 
-// The issue could be in how validateBetReactions is collecting and processing votes:
 async function validateBetReactions(messageId, lockTime) {
   const activeBets = loadActiveBets();
   const match = activeBets[messageId];
@@ -352,52 +351,71 @@ async function validateBetReactions(messageId, lockTime) {
   const message = await channel.messages.fetch(messageId).catch(() => null);
   if (!message) return;
   
-  // Clear existing vote counts first
+  // Clear existing vote counts
   match.options.forEach(option => {
     option.votes = 0;
   });
   
-  // Now process reaction counts
+  // Process reaction counts
   match.totalBetsPlaced = 0;
   const betsByUser = new Map();
+  
+  // Get valid emojis for this bet
+  const validEmojis = match.options.map(option => option.emoji);
   
   // Collect all reactions
   const reactions = message.reactions.cache;
   console.log(`Found ${reactions.size} reactions`);
   
-  // Process each reaction
+  // CRITICAL: Remove invalid reactions that were added while bot was offline
+  for (const [emoji, reaction] of reactions.entries()) {
+    // Check if this reaction is one of our valid bet options
+    if (!validEmojis.includes(emoji)) {
+      console.log(`Removing invalid reaction: ${emoji}`);
+      // Remove this invalid reaction
+      await reaction.remove().catch(console.error);
+      continue;
+    }
+    
+    // For valid reactions, get users who reacted
+    const users = await reaction.users.fetch();
+    
+    // Remove duplicate reactions from users who reacted to multiple options
+    for (const user of users.values()) {
+      // Skip bot reactions
+      if (user.bot) continue;
+      
+      const userId = user.id;
+      const previousBet = betsByUser.get(userId);
+      
+      if (previousBet && previousBet !== emoji) {
+        // User already bet on a different option, remove this reaction
+        console.log(`Removing duplicate reaction from user ${userId}: ${emoji}`);
+        await reaction.users.remove(userId).catch(console.error);
+      } else {
+        // Record this as the user's bet
+        betsByUser.set(userId, emoji);
+      }
+    }
+  }
+  
+  // Now count the valid votes after cleaning up reactions
   for (const option of match.options) {
     const emoji = option.emoji;
     const reaction = reactions.find(r => r.emoji.name === emoji);
     
     if (reaction) {
-      console.log(`Processing reaction for ${emoji}`);
-      
-      // Fetch users who reacted
+      // Fetch users who reacted (should be clean now)
       const users = await reaction.users.fetch();
       
       // Filter out bot reactions
       const validUsers = users.filter(user => !user.bot);
       
-      console.log(`${validUsers.size} valid users reacted with ${emoji}`);
-      
       // Count votes for this option
-      validUsers.forEach(user => {
-        const userId = user.id;
-        
-        // Skip if user already placed a bet on a different option
-        if (betsByUser.has(userId)) {
-          console.log(`User ${userId} already placed a bet on ${betsByUser.get(userId)}`);
-          return;
-        }
-        
-        // Record this bet
-        option.votes = (option.votes || 0) + 1;
-        betsByUser.set(userId, emoji);
-        match.totalBetsPlaced++;
-        
-        console.log(`User ${userId} placed bet on ${emoji}, total bets: ${match.totalBetsPlaced}`);
-      });
+      option.votes = validUsers.size;
+      match.totalBetsPlaced += validUsers.size;
+      
+      console.log(`Option ${emoji}: ${option.votes} valid votes`);
     }
   }
   
@@ -405,7 +423,7 @@ async function validateBetReactions(messageId, lockTime) {
   activeBets[messageId] = match;
   saveActiveBets(activeBets);
   
-  console.log(`Total bets placed for message ${messageId}: ${match.totalBetsPlaced}`);
+  console.log(`Total valid bets for message ${messageId}: ${match.totalBetsPlaced}`);
   console.log("Updated options:", JSON.stringify(match.options, null, 2));
   
   return match;
