@@ -298,15 +298,22 @@ function getBetTypeDefaults(betType) {
 
 
 
+// In the displayBettingOdds function:
 function displayBettingOdds(options) {
+  // First, check if we're getting valid options
+  console.log("Options received:", JSON.stringify(options, null, 2));
+  
   if (!options || options.length === 0) {
     return { error: "No betting options available.", options: [] };
   }
+  
   // Get total votes across all options
   const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
+  console.log("Total votes calculated:", totalVotes);
   
   // If no votes yet, return early with empty array but with error message
   if (totalVotes === 0) {
+    console.log("No votes detected despite having options");
     return { error: "No bets placed yet.", options: [] };
   }
   
@@ -320,178 +327,88 @@ function displayBettingOdds(options) {
     // Calculate payout multiplier (inverse of odds with adjustment)
     // Lower odds = higher payout
     option.payoutMultiplier = option.odds > 0 ? (1 / option.odds).toFixed(2) : "∞";
+    
+    console.log(`Option "${option.name}": votes=${option.votes}, odds=${option.odds}, payout=${option.payoutMultiplier}`);
   });
   
   return { options: optionsWithOdds };
 }
 
 
+// The issue could be in how validateBetReactions is collecting and processing votes:
 async function validateBetReactions(messageId, lockTime) {
-  try {
-    // Load match data from file
-    const activeBets = loadActiveBets();
-    const match = activeBets[messageId];
-    if (!match || !match.options) return;
+  const activeBets = loadActiveBets();
+  const match = activeBets[messageId];
+  if (!match) return;
 
-    console.log(`Validating reactions for bet: ${match.question}`);
-
-    // Find the message across all guilds and channels
-    const guild = client.guilds.cache.first();
-    if (!guild) return;
-
-    const channels = await guild.channels.fetch();
-    let targetMessage = null;
-
-    // Look for the message in all text channels
-    for (const [_, channel] of channels) {
-      if (!channel.isTextBased()) continue;
-
-      try {
-        const message = await channel.messages
-          .fetch(messageId)
-          .catch(() => null);
-        if (message) {
-          targetMessage = message;
-          break;
-        }
-      } catch (err) {
-        // Skip if can't access channel or message not found
-        continue;
-      }
-    }
-
-    if (!targetMessage) {
-      console.log(`Message ${messageId} not found in any channel.`);
-      return;
-    }
-
-    // Get list of valid emojis using our helper functions
-    const allowedEmojis = match.options.map((opt) => normalizeEmoji(opt.emoji));
-
-    // A map to track which users have which valid reactions
-    const userReactions = new Map();
-    const now = Date.now();
-    const isLocked = now > lockTime;
-
-    // First pass - collect all valid reactions and remove invalid ones
-    for (const [emojiKey, reaction] of targetMessage.reactions.cache) {
-      const currentEmojiId = normalizeEmoji(reaction.emoji);
-
-      // Check if this emoji is allowed for this bet
-      const isAllowed = allowedEmojis.includes(currentEmojiId);
-
-      if (!isAllowed) {
-        console.log(
-          `Found invalid emoji ${emojiKey} on bet message ${messageId}`
-        );
-
-        // Fetch all users who used this reaction
-        const users = await reaction.users.fetch();
-
-        // Remove reaction from all non-bot users
-        for (const [userId, user] of users) {
-          if (!user.bot) {
-            console.log(`Removing invalid emoji from user ${user.username}`);
-            await reaction.users.remove(userId).catch((err) => {
-              console.error(
-                `Error removing invalid reaction from ${user.username}:`,
-                err
-              );
-            });
-          }
-        }
-        continue;
-      }
-
-      // If it's a valid emoji, collect users who used it
+  console.log(`Validating bets for message ${messageId}`);
+  
+  const guild = client.guilds.cache.get(match.guildId);
+  if (!guild) return;
+  
+  const channel = await guild.channels.fetch(match.channelId).catch(() => null);
+  if (!channel || !channel.isTextBased()) return;
+  
+  const message = await channel.messages.fetch(messageId).catch(() => null);
+  if (!message) return;
+  
+  // Clear existing vote counts first
+  match.options.forEach(option => {
+    option.votes = 0;
+  });
+  
+  // Now process reaction counts
+  match.totalBetsPlaced = 0;
+  const betsByUser = new Map();
+  
+  // Collect all reactions
+  const reactions = message.reactions.cache;
+  console.log(`Found ${reactions.size} reactions`);
+  
+  // Process each reaction
+  for (const option of match.options) {
+    const emoji = option.emoji;
+    const reaction = reactions.find(r => r.emoji.name === emoji);
+    
+    if (reaction) {
+      console.log(`Processing reaction for ${emoji}`);
+      
+      // Fetch users who reacted
       const users = await reaction.users.fetch();
-
-      for (const [userId, user] of users) {
-        if (!user.bot) {
-          // If bet is locked and this isn't one of the user's reactions before the lock,
-          // remove it (no new bets after lock)
-          if (isLocked && match.lockedAt && !match.lockedUserReactions) {
-            // If this is the first time checking after lock, just record reactions
-            // but don't remove - we don't have historical data
-            if (!match.lockedUserReactions) {
-              match.lockedUserReactions = {};
-            }
-          }
-
-          if (!userReactions.has(userId)) {
-            userReactions.set(userId, []);
-          }
-
-          userReactions.get(userId).push({
-            emoji: reaction.emoji,
-            reaction: reaction,
-          });
+      
+      // Filter out bot reactions
+      const validUsers = users.filter(user => !user.bot);
+      
+      console.log(`${validUsers.size} valid users reacted with ${emoji}`);
+      
+      // Count votes for this option
+      validUsers.forEach(user => {
+        const userId = user.id;
+        
+        // Skip if user already placed a bet on a different option
+        if (betsByUser.has(userId)) {
+          console.log(`User ${userId} already placed a bet on ${betsByUser.get(userId)}`);
+          return;
         }
-      }
+        
+        // Record this bet
+        option.votes = (option.votes || 0) + 1;
+        betsByUser.set(userId, emoji);
+        match.totalBetsPlaced++;
+        
+        console.log(`User ${userId} placed bet on ${emoji}, total bets: ${match.totalBetsPlaced}`);
+      });
     }
-
-    // Second pass - ensure each user only has one reaction
-    // Only process multiple reactions if the bet isn't locked yet
-    if (!isLocked) {
-      for (const [userId, reactions] of userReactions) {
-        // If user has more than one valid reaction
-        if (reactions.length > 1) {
-          try {
-            // Keep one reaction randomly
-            const keepReaction = getRandomItem(reactions);
-
-            // Remove all other reactions
-            for (const reaction of reactions) {
-              if (!doEmojisMatch(reaction.emoji, keepReaction.emoji)) {
-                console.log(`Removing excess emoji from user ${userId}`);
-                await reaction.reaction.users.remove(userId).catch((err) => {
-                  console.error(`Error removing excess reaction:`, err);
-                });
-              }
-            }
-          } catch (err) {
-            console.error(
-              `Error processing multiple reactions for user ${userId}:`,
-              err
-            );
-          }
-        }
-      }
-    }
-
-    console.log(`Finished validating reactions for bet: ${match.question}`);
-    
-    // Count votes for stats
-    for (const option of match.options) {
-      option.votes = 0; // Reset vote count
-    }
-
-    // Count votes from reactions
-    for (const [emojiKey, reaction] of targetMessage.reactions.cache) {
-      // Find the corresponding option by comparing normalized emojis
-      const option = match.options.find((opt) =>
-        doEmojisMatch(opt.emoji, reaction.emoji)
-      );
-
-      if (option) {
-        // Count non-bot users who reacted
-        const users = await reaction.users.fetch();
-        option.votes = Array.from(users.values()).filter(
-          (user) => !user.bot
-        ).length;
-      }
-    }
-    
-    // Update the vote counts in the stored data
-    activeBets[messageId] = match;
-    saveActiveBets(activeBets);
-    
-  } catch (error) {
-    console.error(
-      `Error validating reactions for message ${messageId}:`,
-      error
-    );
   }
+  
+  // Save the updated bet information
+  activeBets[messageId] = match;
+  saveActiveBets(activeBets);
+  
+  console.log(`Total bets placed for message ${messageId}: ${match.totalBetsPlaced}`);
+  console.log("Updated options:", JSON.stringify(match.options, null, 2));
+  
+  return match;
 }
 
 // Replace your existing client.once("ready") event with this updated version
@@ -1773,6 +1690,7 @@ setInterval(async () => {
   const now = Date.now();
   const activeBets = loadActiveBets();
   let saveNeeded = false;
+  
   for (const [messageId, lockTime] of activeMatches.entries()) {
     if (now > lockTime) {
       const match = activeBets[messageId];
@@ -1785,24 +1703,27 @@ setInterval(async () => {
           const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
           if (!targetMessage) continue;
           const discordTimestamp = createDiscordTimestamp(now);
-          await validateBetReactions(messageId, lockTime);
           
-          // Get betting odds result
-          const bettingOddsResult = displayBettingOdds(match.options);
+          // Important: Wait for validation to complete and use its updated results
+          const updatedMatch = await validateBetReactions(messageId, lockTime);
+          if (!updatedMatch) continue;
+          
+          // Use the updated match data with fresh vote counts
+          const bettingOddsResult = displayBettingOdds(updatedMatch.options);
           
           const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
             .setColor(0xff9800)
             .setTitle(`🔒 ${match.question}`)
             .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
-            .setFooter({ text: `Betting System` });
+            .setFooter({ text: `Betting System • ${updatedMatch.totalBetsPlaced || 0} bets placed` });
           
           // Add fields for each option with their odds if available
           if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
             bettingOddsResult.options.forEach(option => {
               lockedEmbed.addFields({
-                name: option.name, 
-                value: `${option.payoutMultiplier}x`, 
-                inline: true  // Use inline fields to display options side by side
+                name: `${option.emoji} ${option.name}`, 
+                value: `Votes: ${option.votes || 0}\nPayout: ${option.payoutMultiplier}x`, 
+                inline: true
               });
             });
           }
@@ -1813,6 +1734,7 @@ setInterval(async () => {
           activeBets[messageId] = match;
           saveNeeded = true;
         } catch (error) {
+          console.error(`Error processing locked bet for message ${messageId}:`, error);
           const guild = client.guilds.cache.get(match.guildId);
           if (!guild) continue;
           const channel = await guild.channels.fetch(match.channelId).catch(() => null);
@@ -1823,10 +1745,10 @@ setInterval(async () => {
       }
     }
   }
+  
   if (saveNeeded) {
     saveActiveBets(activeBets);
   }
 }, 5000);
-
 
 client.login(process.env.TOKEN);
