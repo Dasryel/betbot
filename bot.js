@@ -197,8 +197,9 @@ function calculatePointSuggestions(match, selectedOption) {
   
   // Handle empty options array
   if (!options || options.length === 0) {
+        console.log("No options available for calculation.");
     return { winnerPoints: 6, loserPoints: 3 };
-    console.log("No options available for calculation.");
+
   }
   
   // Get total votes/bets across all options
@@ -206,7 +207,8 @@ function calculatePointSuggestions(match, selectedOption) {
   console.log("Total votes calculated:", totalVotes);
   
   // Find the selected option's bets
-  const selectedBets = selectedOption.bets || 0;
+  const selectedBets = selectedOption.votes || 0;
+  console.log("amount of bets for the selcted option", selectedBets);
 
   
   // Calculate multiplier: (all votes / amount of bets option had)
