@@ -207,13 +207,13 @@ function calculatePointSuggestions(match, selectedOption) {
   console.log("Total votes calculated:", totalVotes);
   
   // Find the selected option's bets
-  const selectedBets = selectedOption.votes || 0;
+  const selectedBets = selectedOption.votes;
   console.log("amount of bets for the selcted option", selectedBets);
 
   
   // Calculate multiplier: (all votes / amount of bets option had)
   // Handle division by zero by defaulting to 1
-  const multiplier = selectedBets === 0 ? 1 : totalVotes / selectedBets;
+  const multiplier = totalVotes / selectedBets;
   console.log("Multiplier calculated:", multiplier);
   
   // Calculate winning points: multiplier * 6, rounded
