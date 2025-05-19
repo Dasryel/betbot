@@ -297,21 +297,24 @@ function getBetTypeDefaults(betType) {
 }
 
 
+
 function displayBettingOdds(options) {
   if (!options || options.length === 0) {
-    return "No betting options available.";
+    return { error: "No betting options available.", options: [] };
   }
-
   // Get total votes across all options
   const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
   
-  // If no votes yet, return early
+  // If no votes yet, return early with empty array but with error message
   if (totalVotes === 0) {
-    return "No bets placed yet.";
+    return { error: "No bets placed yet.", options: [] };
   }
   
+  // Create a copy of options to avoid modifying the original
+  const optionsWithOdds = [...options];
+  
   // Calculate the odds for each option
-  options.forEach(option => {
+  optionsWithOdds.forEach(option => {
     option.odds = (option.votes || 0) / totalVotes;
     
     // Calculate payout multiplier (inverse of odds with adjustment)
@@ -319,7 +322,7 @@ function displayBettingOdds(options) {
     option.payoutMultiplier = option.odds > 0 ? (1 / option.odds).toFixed(2) : "∞";
   });
   
-  return options;
+  return { options: optionsWithOdds };
 }
 
 
@@ -1767,58 +1770,51 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
 setInterval(async () => {
   if (activeMatches.size === 0) return;
-
   const now = Date.now();
   const activeBets = loadActiveBets();
   let saveNeeded = false;
-
   for (const [messageId, lockTime] of activeMatches.entries()) {
     if (now > lockTime) {
       const match = activeBets[messageId];
-
       if (match && match.active && !match.lockMessageSent) {
         try {
           const guild = client.guilds.cache.get(match.guildId);
           if (!guild) continue;
-
           const channel = await guild.channels.fetch(match.channelId).catch(() => null);
           if (!channel || !channel.isTextBased()) continue;
-
           const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
           if (!targetMessage) continue;
-
           const discordTimestamp = createDiscordTimestamp(now);
           await validateBetReactions(messageId, lockTime);
-
-          // Directly pass match.options to the displayBettingOdds function
-          const optionsWithOdds = displayBettingOdds(match.options);
-
+          
+          // Get betting odds result
+          const bettingOddsResult = displayBettingOdds(match.options);
+          
           const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
             .setColor(0xff9800)
             .setTitle(`🔒 ${match.question}`)
-            .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...`)
+            .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
             .setFooter({ text: `Betting System` });
-
-          // Add fields for each option with their odds
-          optionsWithOdds.forEach(option => {
-            lockedEmbed.addFields({
-              name: option.name, 
-              value: `${option.payoutMultiplier}x`, 
-              inline: true  // Use inline fields to display options side by side
+          
+          // Add fields for each option with their odds if available
+          if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
+            bettingOddsResult.options.forEach(option => {
+              lockedEmbed.addFields({
+                name: option.name, 
+                value: `${option.payoutMultiplier}x`, 
+                inline: true  // Use inline fields to display options side by side
+              });
             });
-          });
-
+          }
+          
           await targetMessage.edit({ embeds: [lockedEmbed] });
-
           match.lockMessageSent = true;
           match.lockedAt = now;
           activeBets[messageId] = match;
           saveNeeded = true;
-
         } catch (error) {
           const guild = client.guilds.cache.get(match.guildId);
           if (!guild) continue;
-
           const channel = await guild.channels.fetch(match.channelId).catch(() => null);
           if (channel && channel.isTextBased()) {
             await channel.send(`❌ Failed to update locked bet message \`${messageId}\`:\n\`\`\`${error.message || error}\`\`\``);
@@ -1827,7 +1823,6 @@ setInterval(async () => {
       }
     }
   }
-
   if (saveNeeded) {
     saveActiveBets(activeBets);
   }
