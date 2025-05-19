@@ -189,26 +189,22 @@ function getRandomItem(array) {
 }
 
 // Calculate suggested point values based on odds and bet type
+
 function calculatePointSuggestions(options) {
-  // Bail early if there are no options or votes
+  // Handle empty options array but don't default immediately
   if (!options || options.length === 0) {
-    return { winnerPoints: 20, loserPoints: 5 }; // Default values
+    const defaults = getBetTypeDefaults("match");
+    return { points: defaults.points };
   }
   
   // Get total votes across all options
   const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
   
-  if (totalVotes === 0) {
-    return { winnerPoints: 20, loserPoints: 5 }; // Default if no votes
-  }
-  
   // Calculate the odds for each option (as a decimal: 0.XX)
   options.forEach(option => {
-    option.odds = (option.votes || 0) / totalVotes;
+    // Even with 0 total votes, assign equal probability instead of defaulting
+    option.odds = totalVotes === 0 ? (1 / options.length) : (option.votes || 0) / totalVotes;
   });
-  
-  // Find the winning option's odds
-  const winningOptionOdds = options.find(opt => opt.isWinner)?.odds || 0;
   
   // Count number of options with votes
   const activeOptions = options.filter(opt => (opt.votes || 0) > 0).length;
@@ -221,74 +217,110 @@ function calculatePointSuggestions(options) {
     betType = "custom"; // 3-4 options suggest custom bet
   }
   
-  // Calculate winner points based on odds and bet type
-  let winnerPoints;
+  // Find the winning option's odds - handle case where no winner is marked
+  let winningOptionOdds;
+  const winningOption = options.find(opt => opt.isWinner);
   
-  if (winningOptionOdds === 0) {
-    // Edge case - use defaults if winning option has no votes
-    winnerPoints = getBetTypeDefaults(betType).winnerPoints;
+  if (winningOption) {
+    winningOptionOdds = winningOption.odds;
   } else {
-    // Base calculation - lower odds = higher payout
-    winnerPoints = Math.round(7 / Math.sqrt(winningOptionOdds));
-    
-    // Apply bet type specific adjustments
-    switch (betType) {
-      case "match":
-        // Standard match betting (2 options)
-        winnerPoints = Math.round(winnerPoints * 1.0);
-        break;
-      case "mvp":
-        // MVP betting has more options and should have higher rewards
-        // Adjust based on number of options (typically 6)
-        const mvpMultiplier = Math.sqrt(activeOptions / 2);
-        winnerPoints = Math.round(winnerPoints * mvpMultiplier * 1.2); // Extra bonus for MVP bets
-        break;
-      case "custom":
-        // Custom bets - similar to match betting but slightly higher rewards for engagement
-        winnerPoints = Math.round(winnerPoints * 1.1);
-        break;
-    }
-    
-    // Ensure minimum points based on bet type
-    const minPoints = getBetTypeDefaults(betType).winnerPoints / 2;
-    winnerPoints = Math.max(minPoints, winnerPoints);
+    // If no winner is marked, use the lowest odds (hardest to predict)
+    // This ensures we still calculate something even without a marked winner
+    winningOptionOdds = Math.min(...options.map(opt => opt.odds || 1));
   }
   
-  // Calculate loser points - scaled down from winner points
-  let loserPoints;
+  // Calculate points based on odds and bet type - even with small bets
+  let points;
   
-  if (betType === "match" || (betType === "custom" && activeOptions <= 2)) {
-    // For binary choices, keep the penalty moderate
-    loserPoints = Math.round(winnerPoints / 4);
-  } else if (betType === "mvp") {
-    // For MVP bets (many options), reduce penalty significantly
-    // The more options there are, the lower the penalty should be
-    loserPoints = Math.round(winnerPoints / (5 + (activeOptions - 2) / 2));
-  } else {
-    // For other multi-option bets
-    loserPoints = Math.round(winnerPoints / (4 + (activeOptions - 2) / 2));
+  // Base calculation - lower odds = higher payout
+  // Add a small constant to ensure we don't divide by zero
+  points = Math.round(10 / Math.sqrt(winningOptionOdds + 0.01));
+  
+  // Apply adjustments based on total number of bettors
+  const totalBettors = totalVotes; // Assuming each vote is from a unique bettor
+  
+  // Scale down rewards slightly for very small betting pools
+  let sizeMultiplier = 1.0;
+  if (totalBettors <= 3) {
+    // Small betting pools get a modest reduction
+    sizeMultiplier = 0.7 + (totalBettors * 0.1); // 0.8 for 1 bettor, 0.9 for 2, 1.0 for 3
   }
   
-  // Ensure minimum penalty based on bet type
-  const minPenalty = getBetTypeDefaults(betType).loserPoints / 2;
-  loserPoints = Math.max(minPenalty, loserPoints);
+  // Apply bet type specific adjustments
+  switch (betType) {
+    case "match":
+      // Standard match betting (2 options)
+      points = Math.round(points * sizeMultiplier);
+      break;
+    case "mvp":
+      // MVP betting has more options and should have higher rewards
+      // Modified to work even with few bettors by using number of options
+      const mvpMultiplier = Math.sqrt(Math.max(2, activeOptions || options.length) / 2);
+      points = Math.round(points * mvpMultiplier * 1.2 * sizeMultiplier);
+      break;
+    case "custom":
+      // Custom bets - use actual options count even with few bettors
+      points = Math.round(points * 1.1 * sizeMultiplier);
+      break;
+  }
   
-  return { winnerPoints, loserPoints };
+  // Get default values to use as minimum thresholds, not as fallbacks
+  const defaults = getBetTypeDefaults(betType);
+  
+  // Ensure minimum points based on bet type - reduced for very small bets
+  const minPoints = defaults.points * (totalBettors < 2 ? 0.5 : 0.7);
+  points = Math.max(Math.round(minPoints), points);
+  
+  // Calculate adjustment for extremely lopsided bets
+  // If winning option had > 80% of votes, reduce points to keep rewards proportional
+  if (winningOptionOdds > 0.8) {
+    // Reduce points for extremely lopsided bets where outcome is nearly certain
+    const reductionFactor = 1 - ((winningOptionOdds - 0.8) * 1.5); // Gradually reduce as odds approach 1.0
+    points = Math.max(Math.round(points * reductionFactor), Math.round(minPoints * 0.7));
+  }
+  
+  return { points };
 }
 
 // Helper function to get default points based on bet type
 function getBetTypeDefaults(betType) {
   switch (betType) {
     case "match":
-      return { winnerPoints: 20, loserPoints: 5 };
+      return { points: 10 };
     case "mvp":
-      return { winnerPoints: 30, loserPoints: 3 };
+      return { points: 15 };
     case "custom":
-      return { winnerPoints: 25, loserPoints: 5 };
+      return { points: 12 };
     default:
-      return { winnerPoints: 20, loserPoints: 5 };
+      return { points: 10 };
   }
 }
+
+function displayBettingOdds(options) {
+  if (!options || options.length === 0) {
+    return "No betting options available.";
+  }
+
+  // Get total votes across all options
+  const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
+  
+  // If no votes yet, return early
+  if (totalVotes === 0) {
+    return "No bets placed yet.";
+  }
+  
+  // Calculate the odds for each option
+  options.forEach(option => {
+    option.odds = (option.votes || 0) / totalVotes;
+    
+    // Calculate payout multiplier (inverse of odds with adjustment)
+    // Lower odds = higher payout
+    option.payoutMultiplier = option.odds > 0 ? (1 / option.odds).toFixed(2) : "∞";
+  });
+  
+  return options;
+}
+
 
 async function validateBetReactions(messageId, lockTime) {
   try {
@@ -1758,11 +1790,21 @@ setInterval(async () => {
           const discordTimestamp = createDiscordTimestamp(now);
           await validateBetReactions(messageId, lockTime);
 
+           const optionsWithOdds = displayBettingOdds(match.options);
+
           const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
             .setColor(0xff9800)
             .setTitle(`🔒 ${match.question}`)
             .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...`)
             .setFooter({ text: `Betting System` });
+
+             optionsWithOdds.forEach(option => {
+    embed.addField(
+      option.name, 
+      `${option.payoutMultiplier}x`, 
+      true  // Use inline fields to display options side by side
+    );
+  });
 
           await targetMessage.edit({ embeds: [lockedEmbed] });
 
