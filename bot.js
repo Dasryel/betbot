@@ -190,22 +190,29 @@ function getRandomItem(array) {
 
 // Calculate suggested point values based on odds and bet type
 function calculatePointSuggestions(match, selectedOption) {
+  console.log("Calculating point suggestions...");
+  console.log("Match data:", JSON.stringify(match, null, 2));
+  console.log("Selected option:", JSON.stringify(selectedOption, null, 2));
   const options = match.options;
   
   // Handle empty options array
   if (!options || options.length === 0) {
     return { winnerPoints: 6, loserPoints: 3 };
+    console.log("No options available for calculation.");
   }
   
   // Get total votes/bets across all options
   const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
+  console.log("Total votes calculated:", totalVotes);
   
   // Find the selected option's bets
   const selectedBets = selectedOption.bets || 0;
+
   
   // Calculate multiplier: (all votes / amount of bets option had)
   // Handle division by zero by defaulting to 1
   const multiplier = selectedBets === 0 ? 1 : totalVotes / selectedBets;
+  console.log("Multiplier calculated:", multiplier);
   
   // Calculate winning points: multiplier * 6, rounded
   const winnerPoints = Math.round(multiplier * 6);
