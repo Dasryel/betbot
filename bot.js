@@ -1721,6 +1721,7 @@ setInterval(async () => {
           if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
             bettingOddsResult.options.forEach(option => {
               lockedEmbed.addFields({
+                name: ``, 
                 value: `${option.payoutMultiplier}x`, 
                 inline: true
               });
