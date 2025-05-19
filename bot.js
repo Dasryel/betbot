@@ -1715,14 +1715,13 @@ setInterval(async () => {
             .setColor(0xff9800)
             .setTitle(`🔒 ${match.question}`)
             .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
-            .setFooter({ text: `Betting System • ${updatedMatch.totalBetsPlaced || 0} bets placed` });
+            .setFooter({ text: `Betting System` });
           
           // Add fields for each option with their odds if available
           if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
             bettingOddsResult.options.forEach(option => {
               lockedEmbed.addFields({
-                name: `${option.emoji} ${option.name}`, 
-                value: `Votes: ${option.votes || 0}\nPayout: ${option.payoutMultiplier}x`, 
+                value: `${option.payoutMultiplier}x`, 
                 inline: true
               });
             });
