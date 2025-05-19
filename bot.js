@@ -1787,11 +1787,11 @@ setInterval(async () => {
           const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
           if (!targetMessage) continue;
 
-
           const discordTimestamp = createDiscordTimestamp(now);
           await validateBetReactions(messageId, lockTime);
 
-           const optionsWithOdds = displayBettingOdds(match.options);
+          // Directly pass match.options to the displayBettingOdds function
+          const optionsWithOdds = displayBettingOdds(match.options);
 
           const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
             .setColor(0xff9800)
@@ -1799,13 +1799,14 @@ setInterval(async () => {
             .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...`)
             .setFooter({ text: `Betting System` });
 
-             optionsWithOdds.forEach(option => {
-    embed.addField(
-      option.name, 
-      `${option.payoutMultiplier}x`, 
-      true  // Use inline fields to display options side by side
-    );
-  });
+          // Add fields for each option with their odds
+          optionsWithOdds.forEach(option => {
+            lockedEmbed.addFields({
+              name: option.name, 
+              value: `${option.payoutMultiplier}x`, 
+              inline: true  // Use inline fields to display options side by side
+            });
+          });
 
           await targetMessage.edit({ embeds: [lockedEmbed] });
 
@@ -1831,7 +1832,6 @@ setInterval(async () => {
     saveActiveBets(activeBets);
   }
 }, 5000);
-
 
 
 client.login(process.env.TOKEN);
