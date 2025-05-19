@@ -616,7 +616,7 @@ client.on("interactionCreate", async (interaction) => {
     
     // Calculate suggested point values based on odds
     const { winnerPoints, loserPoints } = calculatePointSuggestions(match, selectedOption);
-    print(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
+    console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
 
     const modal = new ModalBuilder()
       .setCustomId(`award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
