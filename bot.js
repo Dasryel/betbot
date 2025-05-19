@@ -189,111 +189,31 @@ function getRandomItem(array) {
 }
 
 // Calculate suggested point values based on odds and bet type
-
-function calculatePointSuggestions(options) {
-  // Handle empty options array but don't default immediately
+function calculatePointSuggestions(match, selectedOption) {
+  const options = match.options;
+  
+  // Handle empty options array
   if (!options || options.length === 0) {
-    const defaults = getBetTypeDefaults("match");
-    return { points: defaults.points };
+    return { winnerPoints: 6, loserPoints: 3 };
   }
   
-  // Get total votes across all options
+  // Get total votes/bets across all options
   const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
   
-  // Calculate the odds for each option (as a decimal: 0.XX)
-  options.forEach(option => {
-    // Even with 0 total votes, assign equal probability instead of defaulting
-    option.odds = totalVotes === 0 ? (1 / options.length) : (option.votes || 0) / totalVotes;
-  });
+  // Find the selected option's bets
+  const selectedBets = selectedOption.bets || 0;
   
-  // Count number of options with votes
-  const activeOptions = options.filter(opt => (opt.votes || 0) > 0).length;
+  // Calculate multiplier: (all votes / amount of bets option had)
+  // Handle division by zero by defaulting to 1
+  const multiplier = selectedBets === 0 ? 1 : totalVotes / selectedBets;
   
-  // Determine bet type based on number of options
-  let betType = "match"; // Default for 2 options
-  if (options.length >= 5) {
-    betType = "mvp"; // Many options suggests MVP bet
-  } else if (options.length > 2) {
-    betType = "custom"; // 3-4 options suggest custom bet
-  }
+  // Calculate winning points: multiplier * 6, rounded
+  const winnerPoints = Math.round(multiplier * 6);
   
-  // Find the winning option's odds - handle case where no winner is marked
-  let winningOptionOdds;
-  const winningOption = options.find(opt => opt.isWinner);
+  // Calculate losing points: winning points / 3, rounded
+  const loserPoints = Math.round(winnerPoints / 3);
   
-  if (winningOption) {
-    winningOptionOdds = winningOption.odds;
-  } else {
-    // If no winner is marked, use the lowest odds (hardest to predict)
-    // This ensures we still calculate something even without a marked winner
-    winningOptionOdds = Math.min(...options.map(opt => opt.odds || 1));
-  }
-  
-  // Calculate points based on odds and bet type - even with small bets
-  let points;
-  
-  // Base calculation - lower odds = higher payout
-  // Add a small constant to ensure we don't divide by zero
-  points = Math.round(10 / Math.sqrt(winningOptionOdds + 0.01));
-  
-  // Apply adjustments based on total number of bettors
-  const totalBettors = totalVotes; // Assuming each vote is from a unique bettor
-  
-  // Scale down rewards slightly for very small betting pools
-  let sizeMultiplier = 1.0;
-  if (totalBettors <= 3) {
-    // Small betting pools get a modest reduction
-    sizeMultiplier = 0.7 + (totalBettors * 0.1); // 0.8 for 1 bettor, 0.9 for 2, 1.0 for 3
-  }
-  
-  // Apply bet type specific adjustments
-  switch (betType) {
-    case "match":
-      // Standard match betting (2 options)
-      points = Math.round(points * sizeMultiplier);
-      break;
-    case "mvp":
-      // MVP betting has more options and should have higher rewards
-      // Modified to work even with few bettors by using number of options
-      const mvpMultiplier = Math.sqrt(Math.max(2, activeOptions || options.length) / 2);
-      points = Math.round(points * mvpMultiplier * 1.2 * sizeMultiplier);
-      break;
-    case "custom":
-      // Custom bets - use actual options count even with few bettors
-      points = Math.round(points * 1.1 * sizeMultiplier);
-      break;
-  }
-  
-  // Get default values to use as minimum thresholds, not as fallbacks
-  const defaults = getBetTypeDefaults(betType);
-  
-  // Ensure minimum points based on bet type - reduced for very small bets
-  const minPoints = defaults.points * (totalBettors < 2 ? 0.5 : 0.7);
-  points = Math.max(Math.round(minPoints), points);
-  
-  // Calculate adjustment for extremely lopsided bets
-  // If winning option had > 80% of votes, reduce points to keep rewards proportional
-  if (winningOptionOdds > 0.8) {
-    // Reduce points for extremely lopsided bets where outcome is nearly certain
-    const reductionFactor = 1 - ((winningOptionOdds - 0.8) * 1.5); // Gradually reduce as odds approach 1.0
-    points = Math.max(Math.round(points * reductionFactor), Math.round(minPoints * 0.7));
-  }
-  
-  return { points };
-}
-
-// Helper function to get default points based on bet type
-function getBetTypeDefaults(betType) {
-  switch (betType) {
-    case "match":
-      return { points: 10 };
-    case "mvp":
-      return { points: 15 };
-    case "custom":
-      return { points: 12 };
-    default:
-      return { points: 10 };
-  }
+  return { winnerPoints, loserPoints };
 }
 
 
@@ -695,7 +615,8 @@ client.on("interactionCreate", async (interaction) => {
     });
     
     // Calculate suggested point values based on odds
-    const { winnerPoints, loserPoints } = calculatePointSuggestions(match.options);
+    const { winnerPoints, loserPoints } = calculatePointSuggestions(match, selectedOption);
+    print(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
 
     const modal = new ModalBuilder()
       .setCustomId(`award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
