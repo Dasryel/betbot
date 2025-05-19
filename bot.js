@@ -189,32 +189,31 @@ function getRandomItem(array) {
 }
 
 // Calculate suggested point values based on odds and bet type
-function calculatePointSuggestions(match, selectedOption) {
-  console.log("Calculating point suggestions...");
-  console.log("Match data:", JSON.stringify(match, null, 2));
-  console.log("Selected option:", JSON.stringify(selectedOption, null, 2));
+function calculatePointSuggestions(match) {
   const options = match.options;
   
   // Handle empty options array
   if (!options || options.length === 0) {
-        console.log("No options available for calculation.");
-    return { winnerPoints: 6, loserPoints: 3 };
-
+    return { winnerPoints: 555, loserPoints: 555 };
   }
   
-  // Get total votes/bets across all options
-  const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
-  console.log("Total votes calculated:", totalVotes);
+  // Find the winning option
+  const winningOption = options.find(option => option.isWinner === true);
   
-  // Find the selected option's bets
-  const selectedBets = selectedOption.votes;
-  console.log("amount of bets for the selcted option", selectedBets);
-
+  // If no winning option is marked, we can't calculate points
+  if (!winningOption) {
+    return { winnerPoints: 555, loserPoints: 555 };
+  }
+  
+  // Get total votes directly from match data
+  const totalVotes = match.totalBetsPlaced || 0;
+  
+  // Get winning option's votes
+  const winningVotes = winningOption.votes || 0;
   
   // Calculate multiplier: (all votes / amount of bets option had)
-  // Handle division by zero by defaulting to 1
-  const multiplier = totalVotes / selectedBets;
-  console.log("Multiplier calculated:", multiplier);
+  // Handle division by zero or very low bet counts
+  const multiplier = winningVotes <= 0 ? 3 : totalVotes / winningVotes;
   
   // Calculate winning points: multiplier * 6, rounded
   const winnerPoints = Math.round(multiplier * 6);
@@ -624,7 +623,7 @@ client.on("interactionCreate", async (interaction) => {
     });
     
     // Calculate suggested point values based on odds
-    const { winnerPoints, loserPoints } = calculatePointSuggestions(match, selectedOption);
+    const { winnerPoints, loserPoints } = calculatePointSuggestions(match);
     console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
 
     const modal = new ModalBuilder()
