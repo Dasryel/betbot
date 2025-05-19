@@ -326,7 +326,7 @@ function displayBettingOdds(options) {
     
     // Calculate payout multiplier (inverse of odds with adjustment)
     // Lower odds = higher payout
-    option.payoutMultiplier = option.odds > 0 ? (1 / option.odds).toFixed(2) : "∞";
+    option.payoutMultiplier = option.odds > 0 ? (1 / option.odds).toFixed(2) : "1.00";
     
     console.log(`Option "${option.name}": votes=${option.votes}, odds=${option.odds}, payout=${option.payoutMultiplier}`);
   });
@@ -1704,7 +1704,7 @@ setInterval(async () => {
           if (!targetMessage) continue;
           const discordTimestamp = createDiscordTimestamp(now);
           
-          // Important: Wait for validation to complete and use its updated results
+          // Wait for validation to complete and use its updated results
           const updatedMatch = await validateBetReactions(messageId, lockTime);
           if (!updatedMatch) continue;
           
@@ -1715,13 +1715,16 @@ setInterval(async () => {
             .setColor(0xff9800)
             .setTitle(`🔒 ${match.question}`)
             .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
-            .setFooter({ text: `Betting System` });
+            .setFooter({ text: `${updatedMatch.totalBetsPlaced || 0} bets placed • Betting System` });
+          
+          // Clear existing fields to prevent duplicates
+          lockedEmbed.setFields([]);
           
           // Add fields for each option with their odds if available
           if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
             bettingOddsResult.options.forEach(option => {
               lockedEmbed.addFields({
-                name: ``, 
+                name: `${option.emoji} ${option.label}`, 
                 value: `${option.payoutMultiplier}x`, 
                 inline: true
               });
