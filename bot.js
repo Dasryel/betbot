@@ -732,7 +732,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const winnerInput = new TextInputBuilder()
       .setCustomId("winner-points")
-      .setLabel("Points for Winners")
+      .setLabel("Points for Winners," + " Suggested: " + winnerPoints + " points")
       .setPlaceholder(`Suggested: ${winnerPoints} points`)
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
@@ -740,7 +740,7 @@ client.on("interactionCreate", async (interaction) => {
 
     const looserInput = new TextInputBuilder()
       .setCustomId("looser-points")
-      .setLabel("Points to Subtract from Losers")
+      .setLabel("Points to Subtract from Losers," + " Suggested: " + loserPoints + " points")
       .setPlaceholder(`Suggested: ${loserPoints} points`)
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
