@@ -296,6 +296,7 @@ function getBetTypeDefaults(betType) {
   }
 }
 
+
 function displayBettingOdds(options) {
   if (!options || options.length === 0) {
     return "No betting options available.";
