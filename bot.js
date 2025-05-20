@@ -1064,20 +1064,23 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
-      // Get vote counts for each option first using the locked bet data
-      for (const option of match.options) {
-        // Get users who voted for this option from the locked data
-        const usersForOption = lockedBetData.options[option.label] || [];
-        option.votes = usersForOption.length; // Set vote count from locked data
-      }
+// Get vote counts for each option first using the locked bet data
+for (const option of match.options) {
+  // Get users who voted for this option from the locked data
+  const optionData = lockedBetData.options[option.label] || { users: [] };
+  const usersForOption = optionData.users; // Access the users array from the nested structure
+  option.votes = usersForOption.length; // Set vote count from locked data
+}
 
-      // Process all users from the locked bet data
-      for (const option of match.options) {
-        // Determine if this option is the winner
-        const isWinner = option.label === winLabel;
-        
-        // Get users who voted for this option from the locked data
-        const usersForOption = lockedBetData.options[option.label] || [];
+// Process all users from the locked bet data
+for (const option of match.options) {
+  // Determine if this option is the winner
+  const isWinner = option.label === winLabel;
+  
+  // Get users who voted for this option from the locked data
+  const optionData = lockedBetData.options[option.label] || { users: [] };
+  const usersForOption = optionData.users; // Access the users array from the nested structure
+  
         
         // Process each user who voted for this option
         for (const userId of usersForOption) {
