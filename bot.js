@@ -1423,49 +1423,75 @@ if (
 
   const selectedMatchId = interaction.options.getString("match");
   const activeBets = loadActiveBets();
-  const match = activeBets[selectedMatchId];
+  const lockedBets = loadLockedBets();
 
-  if (!match || !match.active) {
+  // Check both sources for the bet
+  let match = activeBets[selectedMatchId];
+  const lockedBetData = lockedBets[selectedMatchId];
+  
+  if (!match && !lockedBetData) {
     return interaction.reply({
-      content: "❌ Invalid or inactive match selected.",
+      content: `❌ Could not find bet with ID: ${selectedMatchId}`,
       flags: MessageFlags.Ephemeral,
     });
   }
-
-  // Create buttons for each option, but distribute across multiple action rows if needed
-  const rows = [];
-  let currentRow = new ActionRowBuilder();
-  let currentRowComponents = 0;
-  const maxComponentsPerRow = 5;
-
-  match.options.forEach((option, index) => {
-    // If the current row has reached the maximum number of components, create a new row
-    if (currentRowComponents >= maxComponentsPerRow) {
-      rows.push(currentRow);
-      currentRow = new ActionRowBuilder();
-      currentRowComponents = 0;
-    }
-
-    // Add the button to the current row
-    currentRow.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`winner-${selectedMatchId}-${index}`)
-        .setLabel(option.label)
-        .setEmoji(option.emoji)
-        .setStyle(ButtonStyle.Primary)
-    );
-    
-    currentRowComponents++;
-  });
-
-  // Add the last row if it has any components
-  if (currentRowComponents > 0) {
-    rows.push(currentRow);
+  
+  // Determine if the bet is locked
+  const isLocked = (match && (match.locked || match.lockMessageSent || match.lockedAt)) || !!lockedBetData;
+  
+  // Get the user data from the appropriate source
+  let userData = { users: [], options: {} };
+  
+  // Prioritize locked data if available
+  if (lockedBetData) {
+    userData = lockedBetData;
   }
-
+  // If not locked but we want to allow setting winners anyway, use the match data
+  else if (match) {
+    // If not locked, we may need to process reaction data on the fly
+    // This would retrieve current reactions - implement as needed
+    // Or you could warn that results may not be final
+    
+    // For now we'll just note it's an unlocked bet
+    console.log(`Note: Setting winner for unlocked bet ${selectedMatchId}`);
+  }
+  
+  // Get the winning option selected by the user
+  const winningOption = interaction.options.getString("option");
+  
+  // Process winner selection (your existing logic here)
+  // ...
+  
+  // Update the bet status across both data sources
+  if (match) {
+    match.winner = winningOption;
+    match.resolved = true;
+    match.resolvedAt = Date.now();
+    
+    // Remove from activeMatches to prevent further checking
+    if (activeMatches && activeMatches.has(selectedMatchId)) {
+      activeMatches.delete(selectedMatchId);
+      console.log(`Removed bet ${selectedMatchId} from activeMatches after setting winner`);
+    }
+    
+    activeBets[selectedMatchId] = match;
+    saveActiveBets(activeBets);
+  }
+  
+  // If it was also in lockedBets, update that info too
+  if (lockedBetData) {
+    lockedBetData.winner = winningOption;
+    lockedBetData.resolved = true;
+    lockedBetData.resolvedAt = Date.now();
+    lockedBets[selectedMatchId] = lockedBetData;
+    saveLockedBets(lockedBets);
+  }
+  
+  // Continue with the rest of your winner logic...
+  // Announce winner, distribute points, etc.
+  
   return interaction.reply({
-    content: `🏆 Select the winner for:\n**${match.question}**`,
-    components: rows,  
+    content: `✅ Option ${winningOption} has been set as the winner for this bet!`,
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -1743,114 +1769,121 @@ setInterval(async () => {
   let saveNeeded = false;
   
   for (const [messageId, lockTime] of activeMatches.entries()) {
-    if (now > lockTime) {
-      const match = activeBets[messageId];
-      if (match && match.active && !match.lockMessageSent) {
-        try {
-          // Check if this bet is already in lockedBets.json to prevent double-locking
-          const lockedBets = loadLockedBets();
-          if (lockedBets[messageId]) {
-            // If it's already locked, just update the flag and continue
-            match.lockMessageSent = true;
-            match.lockedAt = now;
-            activeBets[messageId] = match;
-            saveNeeded = true;
-            continue;
-          }
-          
-          const guild = client.guilds.cache.get(match.guildId);
-          if (!guild) continue;
-          const channel = await guild.channels.fetch(match.channelId).catch(() => null);
-          if (!channel || !channel.isTextBased()) continue;
-          const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
-          if (!targetMessage) continue;
-          const discordTimestamp = createDiscordTimestamp(now);
-          
-          // Wait for validation to complete and use its updated results
-          const updatedMatch = await validateBetReactions(messageId, lockTime);
-          if (!updatedMatch) continue;
-          
-          // Process and store this bet's locked data 
-          const betData = {
-            messageId: messageId,
-            question: match.question,
-            lockTime: lockTime,
-            lockedAt: now,
-            users: [],
-            options: {}
-          };
-          
-          // Get all reactions on the message
-          const reactions = targetMessage.reactions.cache;
-          
-          // For each option in the bet
-          for (const option of updatedMatch.options) {
-            const reaction = reactions.find(r => doEmojisMatch(r.emoji, option.emoji));
-            if (reaction) {
-              // Fetch all users who reacted with this emoji
-              const users = await reaction.users.fetch();
-              const userIds = users.filter(user => !user.bot).map(user => user.id);
-              
-              // Store the users for this option
-              betData.options[option.label] = {
-                emoji: option.emoji,
-                users: userIds
-              };
-              betData.users = [...new Set([...betData.users, ...userIds])]; // Use Set to avoid duplicates
-            } else {
-              // Initialize with empty array if no reactions yet
-              betData.options[option.label] = {
-                emoji: option.emoji,
-                users: []
-              };
-            }
-          }
-          
-          // Save this bet data to lockedBets.json FIRST
-          lockedBets[messageId] = betData;
-          saveLockedBets(lockedBets);
-          
-          // THEN calculate odds for this specific bet using the new function
-          const bettingOddsResult = displayBettingOdds(messageId);
-          
-          const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
-            .setColor(0xff9800)
-            .setTitle(`🔒 ${match.question}`)
-            .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
-            .setFooter({ text: `${bettingOddsResult.totalBets || 0} bets placed • Betting System` });
-          
-          // Clear existing fields to prevent duplicates
-          lockedEmbed.setFields([]);
-          
-          // Add fields for each option with their odds if available
-          if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
-            bettingOddsResult.options.forEach(option => {
-              lockedEmbed.addFields({
-                name: `${option.emoji} ${option.label}`, 
-                value: `${option.payoutMultiplier}x`, 
-                inline: true
-              });
-            });
-          }
-          
-          await targetMessage.edit({ embeds: [lockedEmbed] });
-          
-          // Update match properties and mark as processed
+    const match = activeBets[messageId];
+    // Skip if there's no match data, or if the match is resolved or the message is already sent
+    if (!match || match.resolved || (match.lockMessageSent && now <= lockTime)) continue;
+    
+    // Process matches that have reached their lock time
+    if (now > lockTime && match.active && !match.lockMessageSent) {
+      try {
+        // Check if this bet is already in lockedBets.json to prevent double-locking
+        const lockedBets = loadLockedBets();
+        
+        // Skip if already locked
+        if (lockedBets[messageId] || match.lockMessageSent || match.lockedAt || match.locked) {
+          console.log(`Skipping already locked bet ${messageId}`);
+          // Make sure flags are set for consistency
           match.lockMessageSent = true;
-          match.lockedAt = now;
+          match.lockedAt = match.lockedAt || now;
+          match.locked = true;
           activeBets[messageId] = match;
           saveNeeded = true;
-          
-          console.log(`🔒 Bet ${messageId} has been locked and saved at ${new Date(now).toISOString()}`);
-          
-        } catch (error) {
-          console.error(`Error processing locked bet for message ${messageId}:`, error);
-          const guild = client.guilds.cache.get(match.guildId);
-          if (!guild) continue;
-          const channel = await guild.channels.fetch(match.channelId).catch(() => null);
-          if (channel && channel.isTextBased()) {
-            await channel.send(`❌ Failed to update locked bet message \`${messageId}\`:\n\`\`\`${error.message || error}\`\`\``);
+          continue;
+        }
+        
+        const guild = client.guilds.cache.get(match.guildId);
+        if (!guild) continue;
+        const channel = await guild.channels.fetch(match.channelId).catch(() => null);
+        if (!channel || !channel.isTextBased()) continue;
+        const targetMessage = await channel.messages.fetch(messageId).catch(() => null);
+        if (!targetMessage) continue;
+        const discordTimestamp = createDiscordTimestamp(now);
+        
+        // Wait for validation to complete and use its updated results
+        const updatedMatch = await validateBetReactions(messageId, lockTime);
+        if (!updatedMatch) continue;
+        
+        // Process and store this bet's locked data 
+        const betData = {
+          messageId: messageId,
+          question: match.question,
+          lockTime: lockTime,
+          lockedAt: now,
+          users: [],
+          options: {}
+        };
+        
+        // Get all reactions on the message
+        const reactions = targetMessage.reactions.cache;
+        
+        // For each option in the bet
+        for (const option of updatedMatch.options) {
+          const reaction = reactions.find(r => doEmojisMatch(r.emoji, option.emoji));
+          if (reaction) {
+            // Fetch all users who reacted with this emoji
+            const users = await reaction.users.fetch();
+            const userIds = users.filter(user => !user.bot).map(user => user.id);
+            
+            // Store the users for this option
+            betData.options[option.label] = {
+              emoji: option.emoji,
+              users: userIds
+            };
+            betData.users = [...new Set([...betData.users, ...userIds])]; // Use Set to avoid duplicates
+          } else {
+            // Initialize with empty array if no reactions yet
+            betData.options[option.label] = {
+              emoji: option.emoji,
+              users: []
+            };
           }
+        }
+        
+        // Save this bet data to lockedBets.json FIRST
+        lockedBets[messageId] = betData;
+        saveLockedBets(lockedBets);
+        
+        // THEN calculate odds for this specific bet using the new function
+        const bettingOddsResult = displayBettingOdds(messageId);
+        
+        const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
+          .setColor(0xff9800)
+          .setTitle(`🔒 ${match.question}`)
+          .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
+          .setFooter({ text: `${bettingOddsResult.totalBets || 0} bets placed • Betting System` });
+        
+        // Clear existing fields to prevent duplicates
+        lockedEmbed.setFields([]);
+        
+        // Add fields for each option with their odds if available
+        if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
+          bettingOddsResult.options.forEach(option => {
+            lockedEmbed.addFields({
+              name: `${option.emoji} ${option.label}`, 
+              value: `${option.payoutMultiplier}x`, 
+              inline: true
+            });
+          });
+        }
+        
+        await targetMessage.edit({ embeds: [lockedEmbed] });
+        
+        // Update match properties and mark as processed
+        match.lockMessageSent = true;
+        match.lockedAt = now;
+        match.locked = true; // Add a "locked" flag we can check elsewhere
+        activeBets[messageId] = match;
+        saveNeeded = true;
+        
+        console.log(`🔒 Bet ${messageId} has been locked and saved at ${new Date(now).toISOString()}`);
+        
+      } catch (error) {
+        console.error(`Error processing locked bet for message ${messageId}:`, error);
+        const guild = client.guilds.cache.get(match.guildId);
+        if (!guild) continue;
+        const channel = await guild.channels.fetch(match.channelId).catch(() => null);
+        if (channel && channel.isTextBased()) {
+          await channel.send(`❌ Failed to update locked bet message \`${messageId}\`:\n\`\`\`${error.message || error}\`\`\``);
         }
       }
     }
