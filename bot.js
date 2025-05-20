@@ -1712,6 +1712,17 @@ setInterval(async () => {
       const match = activeBets[messageId];
       if (match && match.active && !match.lockMessageSent) {
         try {
+          // Check if this bet is already in lockedBets.json to prevent double-locking
+          const lockedBets = loadLockedBets();
+          if (lockedBets[messageId]) {
+            // If it's already locked, just update the flag and continue
+            match.lockMessageSent = true;
+            match.lockedAt = now;
+            activeBets[messageId] = match;
+            saveNeeded = true;
+            continue;
+          }
+          
           const guild = client.guilds.cache.get(match.guildId);
           if (!guild) continue;
           const channel = await guild.channels.fetch(match.channelId).catch(() => null);
@@ -1748,16 +1759,20 @@ setInterval(async () => {
           }
           
           await targetMessage.edit({ embeds: [lockedEmbed] });
+          
+          // Update match properties
           match.lockMessageSent = true;
           match.lockedAt = now;
           activeBets[messageId] = match;
           saveNeeded = true;
           
-          // Save locked bet data to lockedBets.json when the bet is locked
-          const lockedBets = loadLockedBets();
+          // Save locked bet data to lockedBets.json when the bet is locked (ONLY ONCE)
+          // Create bet data structure
           const betData = {
             messageId: messageId,
             question: match.question,
+            lockTime: lockTime,
+            lockedAt: now,
             users: [],
             options: {}
           };
@@ -1767,7 +1782,7 @@ setInterval(async () => {
           
           // For each option in the bet
           for (const option of updatedMatch.options) {
-            const reaction = reactions.find(r => r.emoji.name === option.emoji);
+            const reaction = reactions.find(r => doEmojisMatch(r.emoji, option.emoji));
             if (reaction) {
               // Fetch all users who reacted with this emoji
               const users = await reaction.users.fetch();
@@ -1776,12 +1791,17 @@ setInterval(async () => {
               // Store the users for this option
               betData.options[option.label] = userIds;
               betData.users = [...betData.users, ...userIds];
+            } else {
+              // Initialize with empty array if no reactions yet
+              betData.options[option.label] = [];
             }
           }
           
-          // Save this bet data
+          // Save this bet data to lockedBets.json
           lockedBets[messageId] = betData;
           saveLockedBets(lockedBets);
+          
+          console.log(`🔒 Bet ${messageId} has been locked and saved at ${new Date(now).toISOString()}`);
           
         } catch (error) {
           console.error(`Error processing locked bet for message ${messageId}:`, error);
