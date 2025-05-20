@@ -240,40 +240,76 @@ function calculatePointSuggestions(match) {
 
 
 
-// In the displayBettingOdds function:
-function displayBettingOdds(options) {
-  // First, check if we're getting valid options
-  console.log("Options received:", JSON.stringify(options, null, 2));
-  
-  if (!options || options.length === 0) {
-    return { error: "No betting options available.", options: [] };
-  }
-  
-  // Get total votes across all options
-  const totalVotes = options.reduce((sum, option) => sum + (option.votes || 0), 0);
-  console.log("Total votes calculated:", totalVotes);
-  
-  // If no votes yet, return early with empty array but with error message
-  if (totalVotes === 0) {
-    console.log("No votes detected despite having options");
-    return { error: "No bets placed yet.", options: [] };
-  }
-  
-  // Create a copy of options to avoid modifying the original
-  const optionsWithOdds = [...options];
-  
-  // Calculate the odds for each option
-  optionsWithOdds.forEach(option => {
-    option.odds = (option.votes || 0) / totalVotes;
+/**
+ * Calculates and displays betting odds for a specific bet message
+ * @param {string} messageId - ID of the bet message to update
+ * @return {Object} - Result object with potential error or options data
+ */
+function displayBettingOdds(messageId) {
+  try {
+    // Read the locked bets file
+    const lockedBetsData = fs.readFileSync('./lockedbets.json', 'utf8');
+    const lockedBets = JSON.parse(lockedBetsData);
     
-    // Calculate payout multiplier (inverse of odds with adjustment)
-    // Lower odds = higher payout
-    option.payoutMultiplier = option.odds > 0 ? (1 / option.odds).toFixed(2) : "1.00";
+    // If no messageId provided or not found in lockedBets
+    if (!messageId || !lockedBets[messageId]) {
+      return { 
+        error: "Invalid bet ID or bet not locked yet",
+        options: []
+      };
+    }
     
-    console.log(`Option "${option.name}": votes=${option.votes}, odds=${option.odds}, payout=${option.payoutMultiplier}`);
-  });
-  
-  return { options: optionsWithOdds };
+    const betData = lockedBets[messageId];
+    
+    // Calculate the total number of users who participated in this bet
+    const totalVotes = betData.users.length;
+    
+    if (totalVotes === 0) {
+      return {
+        error: "No bets placed",
+        options: []
+      };
+    }
+    
+    // Build results for each option
+    const options = [];
+    
+    for (const optionKey in betData.options) {
+      const option = betData.options[optionKey];
+      const emoji = option.emoji;
+      
+      // Count users who voted for this option
+      const optionVotes = option.users.length;
+      
+      // Calculate odds/payout multiplier
+      let payoutMultiplier;
+      if (optionVotes > 0) {
+        payoutMultiplier = (totalVotes / optionVotes).toFixed(2);
+      } else {
+        payoutMultiplier = "∞"; // Infinity for options with no votes
+      }
+      
+      // Add option to results
+      options.push({
+        emoji: emoji,
+        label: optionKey,
+        votes: optionVotes,
+        payoutMultiplier: payoutMultiplier
+      });
+    }
+    
+    return {
+      totalBets: totalVotes,
+      options: options
+    };
+    
+  } catch (err) {
+    console.error('Error in displayBettingOdds:', err);
+    return {
+      error: `Failed to calculate odds: ${err.message || err}`,
+      options: []
+    };
+  }
 }
 
 
@@ -1738,39 +1774,7 @@ setInterval(async () => {
           const updatedMatch = await validateBetReactions(messageId, lockTime);
           if (!updatedMatch) continue;
           
-          // Use the updated match data with fresh vote counts
-          const bettingOddsResult = displayBettingOdds(updatedMatch.options);
-          
-          const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
-            .setColor(0xff9800)
-            .setTitle(`🔒 ${match.question}`)
-            .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
-            .setFooter({ text: `${updatedMatch.totalBetsPlaced || 0} bets placed • Betting System` });
-          
-          // Clear existing fields to prevent duplicates
-          lockedEmbed.setFields([]);
-          
-          // Add fields for each option with their odds if available
-          if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
-            bettingOddsResult.options.forEach(option => {
-              lockedEmbed.addFields({
-                name: `${option.emoji} ${option.label}`, 
-                value: `${option.payoutMultiplier}x`, 
-                inline: true
-              });
-            });
-          }
-          
-          await targetMessage.edit({ embeds: [lockedEmbed] });
-          
-          // Update match properties
-          match.lockMessageSent = true;
-          match.lockedAt = now;
-          activeBets[messageId] = match;
-          saveNeeded = true;
-          
-          // Save locked bet data to lockedBets.json when the bet is locked (ONLY ONCE)
-          // Create bet data structure
+          // Process and store this bet's locked data 
           const betData = {
             messageId: messageId,
             question: match.question,
@@ -1793,22 +1797,53 @@ setInterval(async () => {
               
               // Store the users for this option
               betData.options[option.label] = {
-  emoji: option.emoji,
-  users: userIds
-};
-              betData.users = [...betData.users, ...userIds];
+                emoji: option.emoji,
+                users: userIds
+              };
+              betData.users = [...new Set([...betData.users, ...userIds])]; // Use Set to avoid duplicates
             } else {
               // Initialize with empty array if no reactions yet
               betData.options[option.label] = {
-  emoji: option.emoji,
-  users: []
-};
+                emoji: option.emoji,
+                users: []
+              };
             }
           }
           
-          // Save this bet data to lockedBets.json
+          // Save this bet data to lockedBets.json FIRST
           lockedBets[messageId] = betData;
           saveLockedBets(lockedBets);
+          
+          // THEN calculate odds for this specific bet using the new function
+          const bettingOddsResult = displayBettingOdds(messageId);
+          
+          const lockedEmbed = EmbedBuilder.from(targetMessage.embeds[0])
+            .setColor(0xff9800)
+            .setTitle(`🔒 ${match.question}`)
+            .setDescription(`Bet locked at ${discordTimestamp}, awaiting results...${bettingOddsResult.error ? `\n\n${bettingOddsResult.error}` : ''}`)
+            .setFooter({ text: `${bettingOddsResult.totalBets || 0} bets placed • Betting System` });
+          
+          // Clear existing fields to prevent duplicates
+          lockedEmbed.setFields([]);
+          
+          // Add fields for each option with their odds if available
+          if (bettingOddsResult.options && bettingOddsResult.options.length > 0) {
+            bettingOddsResult.options.forEach(option => {
+              lockedEmbed.addFields({
+                name: `${option.emoji} ${option.label}`, 
+                value: `${option.payoutMultiplier}x`, 
+                inline: true
+              });
+            });
+          }
+          
+          await targetMessage.edit({ embeds: [lockedEmbed] });
+          
+          // Update match properties and mark as processed
+          match.lockMessageSent = true;
+          match.lockedAt = now;
+          activeBets[messageId] = match;
+          saveNeeded = true;
           
           console.log(`🔒 Bet ${messageId} has been locked and saved at ${new Date(now).toISOString()}`);
           
