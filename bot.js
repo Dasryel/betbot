@@ -152,6 +152,20 @@ function archiveBet(messageId, betData) {
   saveArchivedBets(archivedBets);
 }
 
+function loadLockedBets() {
+  try {
+    const data = fs.readFileSync('./lockedBets.json', 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    return {};
+  }
+}
+
+// Add this function to save locked bets
+function saveLockedBets(lockedBets) {
+  fs.writeFileSync('./lockedBets.json', JSON.stringify(lockedBets, null, 2));
+}
+
 // Helper function to normalize emoji for comparison
 function normalizeEmoji(emoji) {
   if (typeof emoji === "string") {
@@ -1683,6 +1697,37 @@ setInterval(async () => {
           match.lockedAt = now;
           activeBets[messageId] = match;
           saveNeeded = true;
+          
+          // Save locked bet data to lockedBets.json when the bet is locked
+          const lockedBets = loadLockedBets();
+          const betData = {
+            messageId: messageId,
+            question: match.question,
+            users: [],
+            options: {}
+          };
+          
+          // Get all reactions on the message
+          const reactions = targetMessage.reactions.cache;
+          
+          // For each option in the bet
+          for (const option of updatedMatch.options) {
+            const reaction = reactions.find(r => r.emoji.name === option.emoji);
+            if (reaction) {
+              // Fetch all users who reacted with this emoji
+              const users = await reaction.users.fetch();
+              const userIds = users.filter(user => !user.bot).map(user => user.id);
+              
+              // Store the users for this option
+              betData.options[option.label] = userIds;
+              betData.users = [...betData.users, ...userIds];
+            }
+          }
+          
+          // Save this bet data
+          lockedBets[messageId] = betData;
+          saveLockedBets(lockedBets);
+          
         } catch (error) {
           console.error(`Error processing locked bet for message ${messageId}:`, error);
           const guild = client.guilds.cache.get(match.guildId);
