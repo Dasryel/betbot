@@ -1597,7 +1597,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
     // Optionally, you could notify the user that their bet is still counted
     try {
       await user.send({
-        content: `Your bet on message ${messageId} is locked and cannot be changed. Your original selection will still be counted when determining results.`
+        content: `Your bet is locked and cannot be changed`
       });
     } catch (err) {
       // Silently fail if we can't DM the user
@@ -1789,11 +1789,17 @@ setInterval(async () => {
               const userIds = users.filter(user => !user.bot).map(user => user.id);
               
               // Store the users for this option
-              betData.options[option.label] = userIds;
+              betData.options[option.label] = {
+  emoji: option.emoji,
+  users: userIds
+};
               betData.users = [...betData.users, ...userIds];
             } else {
               // Initialize with empty array if no reactions yet
-              betData.options[option.label] = [];
+              betData.options[option.label] = {
+  emoji: option.emoji,
+  users: []
+};
             }
           }
           
