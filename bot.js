@@ -996,7 +996,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  if (
+ if (
     interaction.isModalSubmit() &&
     interaction.customId.startsWith("award-points-")
   ) {
@@ -1054,120 +1054,110 @@ client.on("interactionCreate", async (interaction) => {
       const winners = [];
       const losers = [];
 
-      // Get vote counts for each option first
+      // Load the locked bets data instead of using current reactions
+      const lockedBets = loadLockedBets();
+      const lockedBetData = lockedBets[messageId];
+      
+      if (!lockedBetData) {
+        return interaction.editReply({
+          content: "❌ Could not find locked bet data. Was this bet properly locked?",
+        });
+      }
+
+      // Get vote counts for each option first using the locked bet data
       for (const option of match.options) {
-        option.votes = 0; // Initialize vote count
+        // Get users who voted for this option from the locked data
+        const usersForOption = lockedBetData.options[option.label] || [];
+        option.votes = usersForOption.length; // Set vote count from locked data
       }
 
-      // Count votes from reactions
-      for (const [emojiKey, reaction] of message.reactions.cache) {
-        // Find the corresponding option by comparing normalized emojis
-        const option = match.options.find((opt) =>
-          doEmojisMatch(opt.emoji, reaction.emoji)
-        );
-
-        if (option) {
-          // Count non-bot users who reacted
-          const users = await reaction.users.fetch();
-          option.votes = Array.from(users.values()).filter(
-            (user) => !user.bot
-          ).length;
-        }
-      }
-
-      // Process all the reactions and update user points
-      for (const [emojiKey, reaction] of message.reactions.cache) {
-        // Determine if this reaction matches the winning emoji
-        const isWinner = doEmojisMatch(reaction.emoji, wEmoji);
-
-        // Get the option label for this reaction
-        const optionForReaction = match.options.find((opt) =>
-          doEmojisMatch(opt.emoji, reaction.emoji)
-        );
-
-        const votedLabel = optionForReaction
-          ? optionForReaction.label
-          : "Unknown";
-
-        const users = await reaction.users.fetch();
-        for (const [userId, user] of users) {
-          // Skip bots
-          if (user.bot) continue;
-
-          // Update user points
-          const uid = userId;
-          if (!userData[uid]) userData[uid] = { points: 0 };
-
-          const change = isWinner
-            ? parseInt(winnerValue)
-            : -parseInt(looserValue);
-          userData[uid].points = Math.max(
-            0,
-            userData[uid].points + parseInt(change)
-          );
-
-          // Add to summary for admin
-          results.push(
-            `${user.username}: ${
-              isWinner ? `✅ **+${winnerValue}**` : `❌ **-${looserValue}**`
-            }`
-          );
-
-          // Track winners and losers
-          if (isWinner) {
-            winners.push(`${user.username} (+${winnerValue})`);
-          } else {
-            losers.push(`${user.username} (-${looserValue})`);
-          }
-
-          // Create a personalized embed for this specific user
-          const userEmbed = {
-            color: isWinner ? 0x00ff00 : 0xff0000, // Green for winners, red for losers
-            title: `${match.question} - Results`,
-            fields: [
-              {
-                name: "Status",
-                value: isWinner ? "✅ You Won" : "❌ You Lost",
-                inline: true,
-              },
-              {
-                name: "Points",
-                value: isWinner
-                  ? `+${winnerValue} points`
-                  : `-${looserValue} points`,
-                inline: true,
-              },
-              {
-                name: "\u200B",
-                value: "\u200B",
-                inline: false,
-              },
-              {
-                name: "Your Vote",
-                value: votedLabel,
-                inline: true,
-              },
-              {
-                name: "Winner",
-                value: winLabel,
-                inline: true,
-              },
-              {
-                name: "Current Points",
-                value: `${userData[uid].points}`,
-                inline: false,
-              },
-            ],
-            footer: {
-              text: `Betting System`,
-            },
-          };
-
-          // Send the personalized embed to this user through a DM
+      // Process all users from the locked bet data
+      for (const option of match.options) {
+        // Determine if this option is the winner
+        const isWinner = option.label === winLabel;
+        
+        // Get users who voted for this option from the locked data
+        const usersForOption = lockedBetData.options[option.label] || [];
+        
+        // Process each user who voted for this option
+        for (const userId of usersForOption) {
           try {
-            await user.send({ embeds: [userEmbed] });
-          } catch (err) {
-            console.error(`Failed to DM user ${user.username}:`, err);
+            // Get user object if possible (for username)
+            const user = await client.users.fetch(userId).catch(() => null);
+            const username = user ? user.username : userId;
+            
+            // Update user points
+            const uid = userId;
+            if (!userData[uid]) userData[uid] = { points: 0 };
+
+            const change = isWinner ? winnerValue : -looserValue;
+            userData[uid].points = Math.max(0, userData[uid].points + change);
+
+            // Add to summary for admin
+            results.push(
+              `${username}: ${
+                isWinner ? `✅ **+${winnerValue}**` : `❌ **-${looserValue}**`
+              }`
+            );
+
+            // Track winners and losers
+            if (isWinner) {
+              winners.push(`${username} (+${winnerValue})`);
+            } else {
+              losers.push(`${username} (-${looserValue})`);
+            }
+
+            // Create a personalized embed for this specific user
+            const userEmbed = {
+              color: isWinner ? 0x00ff00 : 0xff0000, // Green for winners, red for losers
+              title: `${match.question} - Results`,
+              fields: [
+                {
+                  name: "Status",
+                  value: isWinner ? "✅ You Won" : "❌ You Lost",
+                  inline: true,
+                },
+                {
+                  name: "Points",
+                  value: isWinner
+                    ? `+${winnerValue} points`
+                    : `-${looserValue} points`,
+                  inline: true,
+                },
+                {
+                  name: "\u200B",
+                  value: "\u200B",
+                  inline: false,
+                },
+                {
+                  name: "Your Vote",
+                  value: option.label,
+                  inline: true,
+                },
+                {
+                  name: "Winner",
+                  value: winLabel,
+                  inline: true,
+                },
+                {
+                  name: "Current Points",
+                  value: `${userData[uid].points}`,
+                  inline: false,
+                },
+              ],
+              footer: {
+                text: `Betting System`,
+              },
+            };
+
+            // Send the personalized embed to this user through a DM
+            try {
+              if (user) await user.send({ embeds: [userEmbed] });
+            } catch (err) {
+              console.error(`Failed to DM user ${username}:`, err);
+            }
+          } catch (error) {
+            console.error(`Error processing user ${userId}:`, error);
           }
         }
       }
@@ -1190,6 +1180,10 @@ client.on("interactionCreate", async (interaction) => {
 
       // Remove from active matches
       activeMatches.delete(messageId);
+      
+      // Remove from locked bets as it's now processed
+      delete lockedBets[messageId];
+      saveLockedBets(lockedBets);
 
       // Save user data
       fs.writeFileSync(userDataFile, JSON.stringify(userData, null, 2));
@@ -1225,7 +1219,7 @@ client.on("interactionCreate", async (interaction) => {
             );
             const percentage =
               totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
-            const isWinner = doEmojisMatch(opt.emoji, wEmoji);
+            const isWinner = opt.label === winLabel;
 
             return {
               name: `${opt.label} ${isWinner ? "✅" : ""}`,
