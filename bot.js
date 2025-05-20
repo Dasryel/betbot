@@ -1561,7 +1561,51 @@ if (
   }
 });
 
-// Modify the messageReactionAdd event handler to check if the bet is locked properly
+// Add this event handler for reaction removals
+client.on("messageReactionRemove", async (reaction, user) => {
+  if (user.bot) return;
+
+  // Fetch partials if necessary
+  if (reaction.partial) {
+    try {
+      await reaction.fetch();
+    } catch (err) {
+      console.error("❌ Failed to fetch partial reaction:", err);
+      return;
+    }
+  }
+
+  if (reaction.message.partial) {
+    try {
+      await reaction.message.fetch();
+    } catch (err) {
+      console.error("❌ Failed to fetch partial message:", err);
+      return;
+    }
+  }
+
+  const messageId = reaction.message.id;
+  
+  // Check if this message is a locked bet
+  const lockedBets = loadLockedBets();
+  if (lockedBets[messageId]) {
+    console.log(`🔒 User ${user.username} (${user.id}) tried to remove reaction after bet was locked. Bet ID: ${messageId}`);
+    
+    // We could re-add the reaction here, but it's not necessary since we're using the saved data
+    // Instead, we'll just log it for monitoring purposes
+    
+    // Optionally, you could notify the user that their bet is still counted
+    try {
+      await user.send({
+        content: `Your bet on message ${messageId} is locked and cannot be changed. Your original selection will still be counted when determining results.`
+      });
+    } catch (err) {
+      // Silently fail if we can't DM the user
+    }
+  }
+});
+
+// Update the existing messageReactionAdd handler
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
 
@@ -1585,6 +1629,24 @@ client.on("messageReactionAdd", async (reaction, user) => {
   }
 
   const messageId = reaction.message.id;
+  
+  // Check if this message is a locked bet - ALWAYS CHECK THIS FIRST
+  const lockedBets = loadLockedBets();
+  if (lockedBets[messageId]) {
+    console.log(`🔒 User ${user.username} (${user.id}) tried to add reaction after bet was locked. Bet ID: ${messageId}`);
+    await reaction.users.remove(user.id);
+    
+    // Optionally, notify the user
+    try {
+      await user.send({
+        content: `The bet on message ${messageId} is locked and no longer accepting entries.`
+      });
+    } catch (err) {
+      // Silently fail if we can't DM the user
+    }
+    return;
+  }
+
   const activeBets = loadActiveBets();
   const match = activeBets[messageId];
   
@@ -1639,7 +1701,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
     }
   }
 });
-
 setInterval(async () => {
   if (activeMatches.size === 0) return;
   const now = Date.now();
