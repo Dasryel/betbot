@@ -240,15 +240,11 @@ function calculatePointSuggestions(match) {
 
 
 
-/**
- * Calculates and displays betting odds for a specific bet message
- * @param {string} messageId - ID of the bet message to update
- * @return {Object} - Result object with potential error or options data
- */
+
 function displayBettingOdds(messageId) {
   try {
     // Read the locked bets file
-    const lockedBetsData = fs.readFileSync('./lockedbets.json', 'utf8');
+    const lockedBetsData = fs.readFileSync('./lockedBets.json', 'utf8');
     const lockedBets = JSON.parse(lockedBetsData);
     
     // If no messageId provided or not found in lockedBets
