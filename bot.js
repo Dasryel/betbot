@@ -1556,111 +1556,22 @@ if (
     });
   }
   
-  // If match doesn't exist but lockedBetData does, create a temporary match object
-  if (!match && lockedBetData) {
-    // Recreate match object from lockedBetData
-    match = {
-      id: selectedMatchId,
-      question: lockedBetData.question || "Unknown Question",
-      options: lockedBetData.optionsList || [],
-      locked: true,
-      lockedAt: lockedBetData.lockedAt || Date.now(),
-    };
-    console.log(`Recreated match object from locked data for ID: ${selectedMatchId}`);
+
+  if (match) {
+      return interaction.reply({
+        content: `Setting winner for active bet: ${match.question}`,
+        flags: MessageFlags.Ephemeral,
+      });
+
+  
   }
-  
-  // Determine if the bet is locked
-  const isLocked = (match && (match.locked || match.lockMessageSent || match.lockedAt)) || !!lockedBetData;
-  
-  // Get the winning option selected by the user
-  const winningOptionValue = interaction.options.getString("option");
-  
-  // Find the winning option object from the match options
-  let winningOption;
-  let winningEmoji;
-  
-  // Try to get the winning option from available options
-  if (match && match.options) {
-    winningOption = match.options.find(opt => 
-      opt.label === winningOptionValue || opt.value === winningOptionValue);
-    
-    if (winningOption) {
-      winningEmoji = winningOption.emoji;
-    }
-  }
-  
-  // If we couldn't find it in match options, try the locked data
-  if (!winningOption && lockedBetData && lockedBetData.options) {
-    // In lockedBetData, options might be structured differently
-    // Either get from optionsList array or recreate from options object
-    if (lockedBetData.optionsList) {
-      winningOption = lockedBetData.optionsList.find(opt => 
-        opt.label === winningOptionValue || opt.value === winningOptionValue);
-        
-      if (winningOption) {
-        winningEmoji = winningOption.emoji;
-      }
-    } else if (lockedBetData.options && lockedBetData.options[winningOptionValue]) {
-      // If it's stored as an object with option names as keys
-      winningOption = {
-        label: winningOptionValue,
-        value: winningOptionValue,
-        // If emoji is stored in the option object
-        emoji: lockedBetData.options[winningOptionValue].emoji || "❓"
-      };
-      winningEmoji = winningOption.emoji;
-    }
-  }
-  
-  // If we still can't find the winning option, reject the command
-  if (!winningOption) {
+  else{
     return interaction.reply({
-      content: `❌ Could not find option "${winningOptionValue}" for this bet.`,
+      content: `Setting winner for locked bet: ${lockedBetData.question}`,
       flags: MessageFlags.Ephemeral,
     });
+
   }
-
-  // For modal-based point assignment, we need to encode and pass the emoji
-  // Create a custom ID that includes the message ID and the winning emoji
-  const customId = `award-points-${selectedMatchId}-${encodeURIComponent(winningEmoji)}`;
-  
-  // Create a modal for point assignment
-  const modal = new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle("Assign Points");
-
-  // Create the text input components
-  const winnerPointsInput = new TextInputBuilder()
-    .setCustomId("winner-points")
-    .setLabel("Points for winners")
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g. 10")
-    .setRequired(true)
-    .setValue("10"); // Default value
-
-  const looserPointsInput = new TextInputBuilder()
-    .setCustomId("looser-points")
-    .setLabel("Points to deduct from losers")
-    .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g. 5")
-    .setRequired(true)
-    .setValue("5"); // Default value
-
-  // Add inputs to the modal
-  const winnerPointsRow = new ActionRowBuilder().addComponents(winnerPointsInput);
-  const looserPointsRow = new ActionRowBuilder().addComponents(looserPointsInput);
-  modal.addComponents(winnerPointsRow, looserPointsRow);
-
-  // Show the modal to collect point values
-  await interaction.showModal(modal);
-  
-  // The rest of the winner selection process will happen in the modal submit handler
-  // including updating both activeBets and lockedBets
-  
-  // Log information about the bet
-  console.log(`Setting up winner selection for bet ${selectedMatchId}`);
-  console.log(`Is bet locked? ${isLocked ? "Yes" : "No"}`);
-  console.log(`Winning option: ${winningOptionValue} (${winningEmoji || "No emoji"})`);
   
 }
   // --- Slash Command: /top ---
