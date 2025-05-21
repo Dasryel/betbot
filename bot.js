@@ -308,6 +308,28 @@ function displayBettingOdds(messageId) {
   }
 }
 
+function buildEmojiButtons(optionsObjectOrArray) {
+  const buttons = [];
+
+  // Normalize options
+  const options = Array.isArray(optionsObjectOrArray)
+    ? optionsObjectOrArray
+    : Object.values(optionsObjectOrArray);
+
+  for (let i = 0; i < options.length && i < 5; i++) { // Discord max 5 buttons per row
+    const option = options[i];
+
+    const button = new ButtonBuilder()
+      .setCustomId(`winner_${i}`)
+      .setLabel(option.emoji)
+      .setStyle(ButtonStyle.Primary);
+
+    buttons.push(button);
+  }
+
+  return new ActionRowBuilder().addComponents(buttons);
+}
+
 
 async function validateBetReactions(messageId, lockTime) {
   const activeBets = loadActiveBets();
@@ -1558,16 +1580,20 @@ if (
   
 
   if (lockedBetData) {
+      const buttonRow = buildEmojiButtons(lockedBetData.options);
       return interaction.reply({
         content: `Setting winner for locked bet: ${lockedBetData.question}`,
+        components: [buttonRow],
         flags: MessageFlags.Ephemeral,
       });
 
   
   }
   else{
+    const buttonRow = buildEmojiButtons(match.options);
     return interaction.reply({
       content: `Setting winner for active bet: ${match.question}`,
+      components: [buttonRow],
       flags: MessageFlags.Ephemeral,
     });
 
