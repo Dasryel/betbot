@@ -1054,15 +1054,31 @@ if (
       });
     }
 
+    // Load all necessary data
     const activeBets = loadActiveBets();
+    const lockedBets = loadLockedBets();
     const userData = fs.existsSync(userDataFile)
       ? JSON.parse(fs.readFileSync(userDataFile))
       : {};
 
-    const match = activeBets[messageId];
+    // Check both sources for the bet
+    let match = activeBets[messageId];
+    const lockedBetData = lockedBets[messageId];
+    
+    // If not in activeBets but in lockedBets, create a temporary match object
+    if (!match && lockedBetData) {
+      console.log("Recreating match object from locked data");
+      match = {
+        id: messageId,
+        question: lockedBetData.question || "Unknown Question",
+        options: lockedBetData.optionsList || [],
+        locked: true,
+      };
+    }
+    
     if (!match) {
       return interaction.editReply({
-        content: "❌ Could not find the selected bet.",
+        content: "❌ Could not find the selected bet in either active or locked bets.",
       });
     }
 
@@ -1086,17 +1102,13 @@ if (
       const winners = [];
       const losers = [];
 
-      // Load the locked bets data
-      const lockedBets = loadLockedBets();
-      const lockedBetData = lockedBets[messageId];
-      
-      // First determine if we're using locked data or live reactions
+      // Determine if we should use locked data or live reactions
       const useLockedData = lockedBetData !== undefined;
       
-      // Process votes based on source (locked data or live reactions)
+      console.log(`Using ${useLockedData ? "locked bet data" : "live reactions"} for messageId: ${messageId}`);
+      
+      // Get vote counts and process user data
       if (useLockedData) {
-        console.log("Using locked bet data for messageId:", messageId);
-        
         // Get vote counts for each option using the locked bet data
         for (const option of match.options) {
           // Get users who voted for this option from the locked data
@@ -1197,8 +1209,6 @@ if (
           }
         }
       } else {
-        console.log("Using live reaction data for messageId:", messageId);
-        
         // Process votes based on live reactions when no locked data exists
         // First, get all reactions on the message
         const reactions = message.reactions.cache;
@@ -1210,7 +1220,7 @@ if (
         
         // Count votes from reactions
         for (const option of match.options) {
-          const reaction = reactions.find(r => doEmojisMatch(r.emoji.name, option.emoji));
+          const reaction = reactions.find(r => doEmojisMatch(r.emoji.name || r.emoji.id, option.emoji));
           if (reaction) {
             // Get all users who reacted (excluding the bot)
             const users = await reaction.users.fetch();
@@ -1319,8 +1329,10 @@ if (
       // Archive the bet (this removes it from active bets and adds to archived bets)
       archiveBet(messageId, archivedBet);
 
-      // Remove from active matches
-      activeMatches.delete(messageId);
+      // Remove from active matches if it exists
+      if (activeMatches && activeMatches.has(messageId)) {
+        activeMatches.delete(messageId);
+      }
       
       // If locked data was used, remove from locked bets as it's now processed
       if (useLockedData) {
