@@ -1028,7 +1028,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
- if (
+if (
     interaction.isModalSubmit() &&
     interaction.customId.startsWith("award-points-")
   ) {
@@ -1086,113 +1086,218 @@ client.on("interactionCreate", async (interaction) => {
       const winners = [];
       const losers = [];
 
-      // Load the locked bets data instead of using current reactions
+      // Load the locked bets data
       const lockedBets = loadLockedBets();
       const lockedBetData = lockedBets[messageId];
       
-      if (!lockedBetData) {
-        return interaction.editReply({
-          content: "❌ Could not find locked bet data. Was this bet properly locked?",
-        });
-      }
-
-// Get vote counts for each option first using the locked bet data
-for (const option of match.options) {
-  // Get users who voted for this option from the locked data
-  const optionData = lockedBetData.options[option.label] || { users: [] };
-  const usersForOption = optionData.users; // Access the users array from the nested structure
-  option.votes = usersForOption.length; // Set vote count from locked data
-}
-
-// Process all users from the locked bet data
-for (const option of match.options) {
-  // Determine if this option is the winner
-  const isWinner = option.label === winLabel;
-  
-  // Get users who voted for this option from the locked data
-  const optionData = lockedBetData.options[option.label] || { users: [] };
-  const usersForOption = optionData.users; // Access the users array from the nested structure
-  
+      // First determine if we're using locked data or live reactions
+      const useLockedData = lockedBetData !== undefined;
+      
+      // Process votes based on source (locked data or live reactions)
+      if (useLockedData) {
+        console.log("Using locked bet data for messageId:", messageId);
         
-        // Process each user who voted for this option
-        for (const userId of usersForOption) {
-          try {
-            // Get user object if possible (for username)
-            const user = await client.users.fetch(userId).catch(() => null);
-            const username = user ? user.username : userId;
-            
-            // Update user points
-            const uid = userId;
-            if (!userData[uid]) userData[uid] = { points: 0 };
-
-            const change = isWinner ? winnerValue : -looserValue;
-            userData[uid].points = Math.max(0, userData[uid].points + change);
-
-            // Add to summary for admin
-            results.push(
-              `${username}: ${
-                isWinner ? `✅ **+${winnerValue}**` : `❌ **-${looserValue}**`
-              }`
-            );
-
-            // Track winners and losers
-            if (isWinner) {
-              winners.push(`${username} (+${winnerValue})`);
-            } else {
-              losers.push(`${username} (-${looserValue})`);
-            }
-
-            // Create a personalized embed for this specific user
-            const userEmbed = {
-              color: isWinner ? 0x00ff00 : 0xff0000, // Green for winners, red for losers
-              title: `${match.question} - Results`,
-              fields: [
-                {
-                  name: "Status",
-                  value: isWinner ? "✅ You Won" : "❌ You Lost",
-                  inline: true,
-                },
-                {
-                  name: "Points",
-                  value: isWinner
-                    ? `+${winnerValue} points`
-                    : `-${looserValue} points`,
-                  inline: true,
-                },
-                {
-                  name: "\u200B",
-                  value: "\u200B",
-                  inline: false,
-                },
-                {
-                  name: "Your Vote",
-                  value: option.label,
-                  inline: true,
-                },
-                {
-                  name: "Winner",
-                  value: winLabel,
-                  inline: true,
-                },
-                {
-                  name: "Current Points",
-                  value: `${userData[uid].points}`,
-                  inline: false,
-                },
-              ],
-              footer: {
-                text: `Betting System`,
-              },
-            };
-
-            // Send the personalized embed to this user through a DM
+        // Get vote counts for each option using the locked bet data
+        for (const option of match.options) {
+          // Get users who voted for this option from the locked data
+          const optionData = lockedBetData.options[option.label] || { users: [] };
+          const usersForOption = optionData.users;
+          option.votes = usersForOption.length; // Set vote count from locked data
+        }
+        
+        // Process all users from the locked bet data
+        for (const option of match.options) {
+          // Determine if this option is the winner
+          const isWinner = option.label === winLabel;
+          
+          // Get users who voted for this option from the locked data
+          const optionData = lockedBetData.options[option.label] || { users: [] };
+          const usersForOption = optionData.users;
+          
+          // Process each user who voted for this option
+          for (const userId of usersForOption) {
             try {
-              if (user) await user.send({ embeds: [userEmbed] });
-            } catch (err) {
-              console.error(`Failed to DM user ${username}:`, err);
+              // Get user object if possible (for username)
+              const user = await client.users.fetch(userId).catch(() => null);
+              const username = user ? user.username : userId;
+              
+              // Update user points
+              const uid = userId;
+              if (!userData[uid]) userData[uid] = { points: 0 };
+
+              const change = isWinner ? winnerValue : -looserValue;
+              userData[uid].points = Math.max(0, userData[uid].points + change);
+
+              // Add to summary for admin
+              results.push(
+                `${username}: ${
+                  isWinner ? `✅ **+${winnerValue}**` : `❌ **-${looserValue}**`
+                }`
+              );
+
+              // Track winners and losers
+              if (isWinner) {
+                winners.push(`${username} (+${winnerValue})`);
+              } else {
+                losers.push(`${username} (-${looserValue})`);
+              }
+
+              // Create a personalized embed for this specific user
+              const userEmbed = {
+                color: isWinner ? 0x00ff00 : 0xff0000, // Green for winners, red for losers
+                title: `${match.question} - Results`,
+                fields: [
+                  {
+                    name: "Status",
+                    value: isWinner ? "✅ You Won" : "❌ You Lost",
+                    inline: true,
+                  },
+                  {
+                    name: "Points",
+                    value: isWinner
+                      ? `+${winnerValue} points`
+                      : `-${looserValue} points`,
+                    inline: true,
+                  },
+                  {
+                    name: "\u200B",
+                    value: "\u200B",
+                    inline: false,
+                  },
+                  {
+                    name: "Your Vote",
+                    value: option.label,
+                    inline: true,
+                  },
+                  {
+                    name: "Winner",
+                    value: winLabel,
+                    inline: true,
+                  },
+                  {
+                    name: "Current Points",
+                    value: `${userData[uid].points}`,
+                    inline: false,
+                  },
+                ],
+                footer: {
+                  text: `Betting System`,
+                },
+              };
+
+              // Send the personalized embed to this user through a DM
+              try {
+                if (user) await user.send({ embeds: [userEmbed] });
+              } catch (err) {
+                console.error(`Failed to DM user ${username}:`, err);
+              }
+            } catch (error) {
+              console.error(`Error processing user ${userId}:`, error);
             }
-          } catch (error) {
-            console.error(`Error processing user ${userId}:`, error);
+          }
+        }
+      } else {
+        console.log("Using live reaction data for messageId:", messageId);
+        
+        // Process votes based on live reactions when no locked data exists
+        // First, get all reactions on the message
+        const reactions = message.reactions.cache;
+        
+        // Reset all vote counts
+        for (const option of match.options) {
+          option.votes = 0;
+        }
+        
+        // Count votes from reactions
+        for (const option of match.options) {
+          const reaction = reactions.find(r => doEmojisMatch(r.emoji.name, option.emoji));
+          if (reaction) {
+            // Get all users who reacted (excluding the bot)
+            const users = await reaction.users.fetch();
+            const validUsers = users.filter(user => !user.bot);
+            option.votes = validUsers.size;
+            
+            // Process each user who voted for this option
+            const isWinner = option.label === winLabel;
+            
+            for (const [userId, user] of validUsers) {
+              try {
+                const username = user.username;
+                
+                // Update user points
+                const uid = userId;
+                if (!userData[uid]) userData[uid] = { points: 0 };
+                
+                const change = isWinner ? winnerValue : -looserValue;
+                userData[uid].points = Math.max(0, userData[uid].points + change);
+                
+                // Add to summary for admin
+                results.push(
+                  `${username}: ${
+                    isWinner ? `✅ **+${winnerValue}**` : `❌ **-${looserValue}**`
+                  }`
+                );
+                
+                // Track winners and losers
+                if (isWinner) {
+                  winners.push(`${username} (+${winnerValue})`);
+                } else {
+                  losers.push(`${username} (-${looserValue})`);
+                }
+                
+                // Create a personalized embed for this specific user
+                const userEmbed = {
+                  color: isWinner ? 0x00ff00 : 0xff0000, // Green for winners, red for losers
+                  title: `${match.question} - Results`,
+                  fields: [
+                    {
+                      name: "Status",
+                      value: isWinner ? "✅ You Won" : "❌ You Lost",
+                      inline: true,
+                    },
+                    {
+                      name: "Points",
+                      value: isWinner
+                        ? `+${winnerValue} points`
+                        : `-${looserValue} points`,
+                      inline: true,
+                    },
+                    {
+                      name: "\u200B",
+                      value: "\u200B",
+                      inline: false,
+                    },
+                    {
+                      name: "Your Vote",
+                      value: option.label,
+                      inline: true,
+                    },
+                    {
+                      name: "Winner",
+                      value: winLabel,
+                      inline: true,
+                    },
+                    {
+                      name: "Current Points",
+                      value: `${userData[uid].points}`,
+                      inline: false,
+                    },
+                  ],
+                  footer: {
+                    text: `Betting System`,
+                  },
+                };
+                
+                // Send the personalized embed to this user through a DM
+                try {
+                  await user.send({ embeds: [userEmbed] });
+                } catch (err) {
+                  console.error(`Failed to DM user ${username}:`, err);
+                }
+              } catch (error) {
+                console.error(`Error processing user ${userId}:`, error);
+              }
+            }
           }
         }
       }
@@ -1208,6 +1313,7 @@ for (const option of match.options) {
         loserPoints: looserValue,
         winners: winners,
         losers: losers,
+        usedLockedData: useLockedData
       };
 
       // Archive the bet (this removes it from active bets and adds to archived bets)
@@ -1216,9 +1322,11 @@ for (const option of match.options) {
       // Remove from active matches
       activeMatches.delete(messageId);
       
-      // Remove from locked bets as it's now processed
-      delete lockedBets[messageId];
-      saveLockedBets(lockedBets);
+      // If locked data was used, remove from locked bets as it's now processed
+      if (useLockedData) {
+        delete lockedBets[messageId];
+        saveLockedBets(lockedBets);
+      }
 
       // Save user data
       fs.writeFileSync(userDataFile, JSON.stringify(userData, null, 2));
