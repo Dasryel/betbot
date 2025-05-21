@@ -1606,7 +1606,7 @@ if (
   
 
   if (lockedBetData) {
-      const buttonRow = buildEmojiButtons(lockedBetData.options,messageId, true);
+      const buttonRow = buildEmojiButtons(lockedBetData.options,selectedMatchId, true);
       return interaction.reply({
         content: `Setting winner for locked bet: ${lockedBetData.question}`,
         components: [buttonRow],
@@ -1616,7 +1616,7 @@ if (
   
   }
   else{
-    const buttonRow = buildEmojiButtons(match.options,messageId, false);
+    const buttonRow = buildEmojiButtons(match.options,selectedMatchId, false);
     return interaction.reply({
       content: `Setting winner for active bet: ${match.question}`,
       components: [buttonRow],
