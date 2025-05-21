@@ -1559,7 +1559,7 @@ if (
 
   if (lockedBetData) {
       return interaction.reply({
-        content: `Setting winner for locked bet: ${match.question}`,
+        content: `Setting winner for locked bet: ${lockedBetData.question}`,
         flags: MessageFlags.Ephemeral,
       });
 
@@ -1567,7 +1567,7 @@ if (
   }
   else{
     return interaction.reply({
-      content: `Setting winner for active  bet: ${lockedBetData.question}`,
+      content: `Setting winner for active bet: ${match.question}`,
       flags: MessageFlags.Ephemeral,
     });
 
