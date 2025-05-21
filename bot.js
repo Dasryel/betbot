@@ -204,6 +204,7 @@ function getRandomItem(array) {
 
 // Calculate suggested point values based on odds and bet type
 function calculatePointSuggestions(match) {
+  console.log("Calculating point suggestions for match:", match);
   const options = match.options;
   
   // Handle empty options array
@@ -685,7 +686,20 @@ if (interaction.isButton() && interaction.customId.startsWith("winner-")) {
       opt.isWinner = idx === index;
     });
 
-    ({ winnerPoints, loserPoints } = calculatePointSuggestions(optionsArray));
+    // Calculate total votes
+const totalVotes = optionsArray.reduce((sum, opt) => sum + (opt.users?.length || 0), 0);
+
+// Add `.votes` and `.isWinner` to each option
+const preparedOptions = optionsArray.map((opt, idx) => ({
+  ...opt,
+  votes: opt.users?.length || 0,
+  isWinner: idx === parseInt(index)
+}));
+
+ ({ winnerPoints, loserPoints } = calculatePointSuggestions({
+      options: preparedOptions,
+      totalBetsPlaced: totalVotes
+    }));
 
   } else {
     const activeBets = loadActiveBets();
