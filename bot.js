@@ -308,7 +308,7 @@ function displayBettingOdds(messageId) {
   }
 }
 
-function buildEmojiButtons(optionsObjectOrArray, locked) {
+function buildEmojiButtons(optionsObjectOrArray, messageId, locked) {
   const buttons = [];
 
   const options = Array.isArray(optionsObjectOrArray)
@@ -320,30 +320,19 @@ function buildEmojiButtons(optionsObjectOrArray, locked) {
 
   for (let i = 0; i < options.length && i < 5; i++) {
     const option = options[i];
+    const customId = `winner-${locked ? "locked" : "active"}-${messageId}-${i}`;
 
-
-    if (locked) {
-          const button = new ButtonBuilder()
-      .setCustomId(`winner-locked-${messageId}-${optionIndex}`)
-      .setLabel(option.emoji)
+    const button = new ButtonBuilder()
+      .setCustomId(customId)
+      .setEmoji(option.emoji)
       .setStyle(ButtonStyle.Primary);
-      buttons.push(button);
-    }
-    else{
-          const button = new ButtonBuilder()
-        .setCustomId(`winner-active-${messageId}-${optionIndex}`)
-      .setLabel(option.emoji)
-      .setStyle(ButtonStyle.Primary);
-      buttons.push(button);
 
-    }
-
-
-    
+    buttons.push(button);
   }
 
   return new ActionRowBuilder().addComponents(buttons);
 }
+
 
 
 
@@ -654,15 +643,20 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
- if (interaction.isButton() && interaction.customId.startsWith("winner-")) {
-     const [, type, messageId, index] = interaction.customId.split("-");
-    const isLocked = type === "locked";
-    const activeBets = loadActiveBets();
-    let match;
+if (interaction.isButton() && interaction.customId.startsWith("winner-")) {
+  const [, type, messageId, indexStr] = interaction.customId.split("-");
+  const isLocked = type === "locked";
+  const index = parseInt(indexStr);
 
-      if (isLocked) {
-    const lockedBets = loadLockedBets(); // Load lockedBets.json
+  let match;
+  let selectedOption;
+  let wEmoji;
+  let winnerPoints, loserPoints;
+
+  if (isLocked) {
+    const lockedBets = loadLockedBets();
     match = lockedBets[messageId];
+
     if (!match) {
       return interaction.reply({
         content: "❌ Could not find the locked bet.",
@@ -676,9 +670,7 @@ client.on("interactionCreate", async (interaction) => {
       users: opt.users,
     }));
 
-    const selectedOption = optionsArray[parseInt(index)];
-    wEmoji = selectedOption.emoji;
-
+    selectedOption = optionsArray[index];
     if (!selectedOption) {
       return interaction.reply({
         content: "❌ Could not find the selected option.",
@@ -686,40 +678,17 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // mark winner
+    wEmoji = selectedOption.emoji;
+
+    // Mark winner
     optionsArray.forEach((opt, idx) => {
-      opt.isWinner = (idx === parseInt(index));
+      opt.isWinner = idx === index;
     });
 
-    // calculate points
-    const { winnerPoints, loserPoints } = calculatePointSuggestions(optionsArray);
-    console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
+    ({ winnerPoints, loserPoints } = calculatePointSuggestions(optionsArray));
 
-    const modal = new ModalBuilder()
-      .setCustomId(`(LOCKED)award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
-      .setTitle("Award Points");
-
-    const winnerInput = new TextInputBuilder()
-      .setCustomId("winner-points")
-      .setLabel("Points for Winners")
-      .setPlaceholder(`Suggested: ${winnerPoints} points`)
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-
-    const looserInput = new TextInputBuilder()
-      .setCustomId("looser-points")
-      .setLabel("Points to Subtract from Losers")
-      .setPlaceholder(`Suggested: ${loserPoints} points`)
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
-
-    const row1 = new ActionRowBuilder().addComponents(winnerInput);
-    const row2 = new ActionRowBuilder().addComponents(looserInput);
-
-    modal.addComponents(row1, row2);
-    await interaction.showModal(modal);
-      }else{
- const activeBets = loadActiveBets();
+  } else {
+    const activeBets = loadActiveBets();
     match = activeBets[messageId];
 
     if (!match || !match.options) {
@@ -729,9 +698,7 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    const selectedOption = match.options[parseInt(index)];
-    wEmoji = selectedOption.emoji;
-
+    selectedOption = match.options[index];
     if (!selectedOption) {
       return interaction.reply({
         content: "❌ Could not find the selected option.",
@@ -739,39 +706,43 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
+    wEmoji = selectedOption.emoji;
+
     match.options.forEach((opt, idx) => {
-      opt.isWinner = (idx === parseInt(index));
+      opt.isWinner = idx === index;
     });
 
-    const { winnerPoints, loserPoints } = calculatePointSuggestions(match);
-    console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
+    ({ winnerPoints, loserPoints } = calculatePointSuggestions(match));
+  }
 
-    const modal = new ModalBuilder()
-      .setCustomId(`(ACTIVE)award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
-      .setTitle("Award Points");
+  console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
 
-    const winnerInput = new TextInputBuilder()
-      .setCustomId("winner-points")
-      .setLabel("Points for Winners")
-      .setPlaceholder(`Suggested: ${winnerPoints} points`)
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
+  const modal = new ModalBuilder()
+    .setCustomId(`award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
+    .setTitle("Award Points");
 
-    const looserInput = new TextInputBuilder()
-      .setCustomId("looser-points")
-      .setLabel("Points to Subtract from Losers")
-      .setPlaceholder(`Suggested: ${loserPoints} points`)
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true)
+  const winnerInput = new TextInputBuilder()
+    .setCustomId("winner-points")
+    .setLabel("Points for Winners")
+    .setPlaceholder(`Suggested: ${winnerPoints} points`)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-    const row1 = new ActionRowBuilder().addComponents(winnerInput);
-    const row2 = new ActionRowBuilder().addComponents(looserInput);
+  const loserInput = new TextInputBuilder()
+    .setCustomId("looser-points")
+    .setLabel("Points to Subtract from Losers")
+    .setPlaceholder(`Suggested: ${loserPoints} points`)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
 
-    modal.addComponents(row1, row2);
-    await interaction.showModal(modal);
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(winnerInput),
+    new ActionRowBuilder().addComponents(loserInput)
+  );
 
-      }
-    }
+  await interaction.showModal(modal);
+}
+
 
   // --- Balance Button Handlers ---
   if (
@@ -1635,7 +1606,7 @@ if (
   
 
   if (lockedBetData) {
-      const buttonRow = buildEmojiButtons(lockedBetData.options, true);
+      const buttonRow = buildEmojiButtons(lockedBetData.options,messageId, true);
       return interaction.reply({
         content: `Setting winner for locked bet: ${lockedBetData.question}`,
         components: [buttonRow],
@@ -1645,7 +1616,7 @@ if (
   
   }
   else{
-    const buttonRow = buildEmojiButtons(match.options, false);
+    const buttonRow = buildEmojiButtons(match.options,messageId, false);
     return interaction.reply({
       content: `Setting winner for active bet: ${match.question}`,
       components: [buttonRow],
