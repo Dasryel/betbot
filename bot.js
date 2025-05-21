@@ -308,27 +308,43 @@ function displayBettingOdds(messageId) {
   }
 }
 
-function buildEmojiButtons(optionsObjectOrArray) {
+function buildEmojiButtons(optionsObjectOrArray, locked) {
   const buttons = [];
 
-  // Normalize options
   const options = Array.isArray(optionsObjectOrArray)
     ? optionsObjectOrArray
-    : Object.values(optionsObjectOrArray);
+    : Object.entries(optionsObjectOrArray).map(([label, data]) => ({
+        label,
+        emoji: data.emoji
+      }));
 
-  for (let i = 0; i < options.length && i < 5; i++) { // Discord max 5 buttons per row
+  for (let i = 0; i < options.length && i < 5; i++) {
     const option = options[i];
 
-    const button = new ButtonBuilder()
-      .setCustomId(`winner_${i}`)
+
+    if (locked) {
+          const button = new ButtonBuilder()
+      .setCustomId(`winner-locked-${messageId}-${optionIndex}`)
       .setLabel(option.emoji)
       .setStyle(ButtonStyle.Primary);
+      buttons.push(button);
+    }
+    else{
+          const button = new ButtonBuilder()
+        .setCustomId(`winner-active-${messageId}-${optionIndex}`)
+      .setLabel(option.emoji)
+      .setStyle(ButtonStyle.Primary);
+      buttons.push(button);
 
-    buttons.push(button);
+    }
+
+
+    
   }
 
   return new ActionRowBuilder().addComponents(buttons);
 }
+
 
 
 async function validateBetReactions(messageId, lockTime) {
@@ -637,65 +653,50 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
   }
-  // --- Winner Dropdown Handling ---
-  if (
-    interaction.isStringSelectMenu() &&
-    interaction.customId === "select-winner-bet"
-  ) {
-    const messageId = interaction.values[0];
-    const activeBets = loadActiveBets();
-    const match = activeBets[messageId];
-
-    if (!match || !match.active) {
-      return interaction.reply({
-        content: "❗ That bet is no longer active.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-
-    const buttons = match.options.map((opt, index) =>
-      new ButtonBuilder()
-        .setCustomId(`winner-${messageId}-${index}`)
-        .setLabel(`${opt.label}`)
-        .setEmoji(opt.emoji)
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    const row = new ActionRowBuilder().addComponents(buttons);
-
-    return interaction.reply({
-      content: `🏆 Select the winner for:\n**${match.question}**`,
-      components: [row],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
 
  if (interaction.isButton() && interaction.customId.startsWith("winner-")) {
-    const [, messageId, index] = interaction.customId.split("-");
+     const [, type, messageId, index] = interaction.customId.split("-");
+    const isLocked = type === "locked";
     const activeBets = loadActiveBets();
-    const match = activeBets[messageId];
-    const selectedOption = match.options[parseInt(index)];
+    let match;
 
-    if (!match || !selectedOption) {
+      if (isLocked) {
+    const lockedBets = loadLockedBets(); // Load lockedBets.json
+    match = lockedBets[messageId];
+    if (!match) {
       return interaction.reply({
-        content: "❌ Could not find the selected bet or option.",
+        content: "❌ Could not find the locked bet.",
         ephemeral: true,
       });
     }
 
-    const wEmoji = selectedOption.emoji;
-    
-    // Mark the winning option for our calculations
-    match.options.forEach((opt, idx) => {
+    const optionsArray = Object.entries(match.options).map(([label, opt]) => ({
+      label,
+      emoji: opt.emoji,
+      users: opt.users,
+    }));
+
+    const selectedOption = optionsArray[parseInt(index)];
+    wEmoji = selectedOption.emoji;
+
+    if (!selectedOption) {
+      return interaction.reply({
+        content: "❌ Could not find the selected option.",
+        ephemeral: true,
+      });
+    }
+
+    // mark winner
+    optionsArray.forEach((opt, idx) => {
       opt.isWinner = (idx === parseInt(index));
     });
-    
-    // Calculate suggested point values based on odds
-    const { winnerPoints, loserPoints } = calculatePointSuggestions(match);
+
+    // calculate points
+    const { winnerPoints, loserPoints } = calculatePointSuggestions(optionsArray);
     console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
 
     const modal = new ModalBuilder()
-      .setCustomId(`award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
+      .setCustomId(`(LOCKED)award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
       .setTitle("Award Points");
 
     const winnerInput = new TextInputBuilder()
@@ -717,7 +718,61 @@ client.on("interactionCreate", async (interaction) => {
 
     modal.addComponents(row1, row2);
     await interaction.showModal(modal);
-  }
+      }else{
+ const activeBets = loadActiveBets();
+    match = activeBets[messageId];
+
+    if (!match || !match.options) {
+      return interaction.reply({
+        content: "❌ Could not find the active bet.",
+        ephemeral: true,
+      });
+    }
+
+    const selectedOption = match.options[parseInt(index)];
+    wEmoji = selectedOption.emoji;
+
+    if (!selectedOption) {
+      return interaction.reply({
+        content: "❌ Could not find the selected option.",
+        ephemeral: true,
+      });
+    }
+
+    match.options.forEach((opt, idx) => {
+      opt.isWinner = (idx === parseInt(index));
+    });
+
+    const { winnerPoints, loserPoints } = calculatePointSuggestions(match);
+    console.log(`Winner Points: ${winnerPoints}, Loser Points: ${loserPoints}`);
+
+    const modal = new ModalBuilder()
+      .setCustomId(`(ACTIVE)award-points-${messageId}-${encodeURIComponent(wEmoji)}`)
+      .setTitle("Award Points");
+
+    const winnerInput = new TextInputBuilder()
+      .setCustomId("winner-points")
+      .setLabel("Points for Winners")
+      .setPlaceholder(`Suggested: ${winnerPoints} points`)
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+
+    const looserInput = new TextInputBuilder()
+      .setCustomId("looser-points")
+      .setLabel("Points to Subtract from Losers")
+      .setPlaceholder(`Suggested: ${loserPoints} points`)
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+
+    const row1 = new ActionRowBuilder().addComponents(winnerInput);
+    const row2 = new ActionRowBuilder().addComponents(looserInput);
+
+    modal.addComponents(row1, row2);
+    await interaction.showModal(modal);
+
+      }
+    }
+
   // --- Balance Button Handlers ---
   if (
     interaction.isButton() &&
@@ -1580,7 +1635,7 @@ if (
   
 
   if (lockedBetData) {
-      const buttonRow = buildEmojiButtons(lockedBetData.options);
+      const buttonRow = buildEmojiButtons(lockedBetData.options, true);
       return interaction.reply({
         content: `Setting winner for locked bet: ${lockedBetData.question}`,
         components: [buttonRow],
@@ -1590,7 +1645,7 @@ if (
   
   }
   else{
-    const buttonRow = buildEmojiButtons(match.options);
+    const buttonRow = buildEmojiButtons(match.options, false);
     return interaction.reply({
       content: `Setting winner for active bet: ${match.question}`,
       components: [buttonRow],
