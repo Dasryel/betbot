@@ -283,7 +283,7 @@ function displayBettingOdds(messageId) {
       if (optionVotes > 0) {
         payoutMultiplier = (totalVotes / optionVotes).toFixed(2);
       } else {
-        payoutMultiplier = "∞"; // Infinity for options with no votes
+        payoutMultiplier = "1.00"; // Infinity for options with no votes
       }
       
       // Add option to results
