@@ -408,9 +408,17 @@ async function validateBetReactions(messageId, lockTime) {
     if (!validEmojis.includes(emojiIdentifier)) {
       console.log(`Removing invalid reaction: ${emojiIdentifier}`);
       
-      // Log invalid reaction removal to file
+      // Get users who reacted with this invalid emoji before removing it
+      const invalidUsers = await reaction.users.fetch();
       const betName = match.question || 'Unknown Bet';
-      logToFile(`${betName} --- REMOVED INVALID EMOJI: ${emojiIdentifier}`);
+      
+      // Log each user who had this invalid reaction
+      for (const user of invalidUsers.values()) {
+        if (!user.bot) { // Skip bot reactions
+          const username = user.username || user.tag || user.id;
+          logToFile(`${betName} --- REMOVED INVALID EMOJI FROM USER: ${username} (${user.id}) - ${emojiIdentifier}`);
+        }
+      }
       
       // Remove this invalid reaction
       await reaction.remove().catch(console.error);
@@ -434,8 +442,8 @@ async function validateBetReactions(messageId, lockTime) {
         
         // Log duplicate reaction removal to file
         const betName = match.question || 'Unknown Bet';
-        const username = user.username || user.tag || userId;
-        logToFile(`${betName} --- REMOVED DUPLICATE EMOJI FROM USER: ${username} (${emojiIdentifier})`);
+        const username = user.username || user.tag || user.id;
+        logToFile(`${betName} --- REMOVED DUPLICATE EMOJI FROM USER: ${username} (${userId}) - ${emojiIdentifier}`);
         
         await reaction.users.remove(userId).catch(console.error);
       } else {
