@@ -365,15 +365,31 @@ async function validateBetReactions(messageId, lockTime) {
   // Get valid emojis for this bet
   const validEmojis = match.options.map(option => option.emoji);
   
+  // Helper function to get emoji identifier
+  function getEmojiIdentifier(reaction) {
+    if (reaction.emoji.id) {
+      // Custom emoji: <:name:id> or <a:name:id>
+      return reaction.emoji.animated ? 
+        `<a:${reaction.emoji.name}:${reaction.emoji.id}>` : 
+        `<:${reaction.emoji.name}:${reaction.emoji.id}>`;
+    } else {
+      // Unicode emoji
+      return reaction.emoji.name;
+    }
+  }
+  
   // Collect all reactions
   const reactions = message.reactions.cache;
   console.log(`Found ${reactions.size} reactions`);
   
   // CRITICAL: Remove invalid reactions that were added while bot was offline
   for (const [emoji, reaction] of reactions.entries()) {
+    // Get the proper emoji identifier for comparison
+    const emojiIdentifier = getEmojiIdentifier(reaction);
+    
     // Check if this reaction is one of our valid bet options
-    if (!validEmojis.includes(emoji)) {
-      console.log(`Removing invalid reaction: ${emoji}`);
+    if (!validEmojis.includes(emojiIdentifier)) {
+      console.log(`Removing invalid reaction: ${emojiIdentifier}`);
       // Remove this invalid reaction
       await reaction.remove().catch(console.error);
       continue;
@@ -390,13 +406,13 @@ async function validateBetReactions(messageId, lockTime) {
       const userId = user.id;
       const previousBet = betsByUser.get(userId);
       
-      if (previousBet && previousBet !== emoji) {
+      if (previousBet && previousBet !== emojiIdentifier) {
         // User already bet on a different option, remove this reaction
-        console.log(`Removing duplicate reaction from user ${userId}: ${emoji}`);
+        console.log(`Removing duplicate reaction from user ${userId}: ${emojiIdentifier}`);
         await reaction.users.remove(userId).catch(console.error);
       } else {
         // Record this as the user's bet
-        betsByUser.set(userId, emoji);
+        betsByUser.set(userId, emojiIdentifier);
       }
     }
   }
@@ -404,7 +420,12 @@ async function validateBetReactions(messageId, lockTime) {
   // Now count the valid votes after cleaning up reactions
   for (const option of match.options) {
     const emoji = option.emoji;
-    const reaction = reactions.find(r => r.emoji.name === emoji);
+    
+    // Find the reaction that matches this option's emoji
+    const reaction = reactions.find(r => {
+      const reactionIdentifier = getEmojiIdentifier(r);
+      return reactionIdentifier === emoji;
+    });
     
     if (reaction) {
       // Fetch users who reacted (should be clean now)
