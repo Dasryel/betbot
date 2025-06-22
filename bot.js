@@ -337,6 +337,23 @@ function buildEmojiButtons(optionsObjectOrArray, messageId, locked) {
 
 
 
+// Helper function to log to file
+function logToFile(message) {
+  const fs = require('fs');
+  const path = require('path');
+  
+  const logDir = path.join(__dirname, 'logs');
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  
+  const logFile = path.join(logDir, 'bet_actions.log');
+  const timestamp = new Date().toISOString();
+  const logEntry = `${timestamp} --- ${message}\n`;
+  
+  fs.appendFileSync(logFile, logEntry);
+}
+
 async function validateBetReactions(messageId, lockTime) {
   const activeBets = loadActiveBets();
   const match = activeBets[messageId];
@@ -390,6 +407,11 @@ async function validateBetReactions(messageId, lockTime) {
     // Check if this reaction is one of our valid bet options
     if (!validEmojis.includes(emojiIdentifier)) {
       console.log(`Removing invalid reaction: ${emojiIdentifier}`);
+      
+      // Log invalid reaction removal to file
+      const betName = match.question || 'Unknown Bet';
+      logToFile(`${betName} --- REMOVED INVALID EMOJI: ${emojiIdentifier}`);
+      
       // Remove this invalid reaction
       await reaction.remove().catch(console.error);
       continue;
@@ -409,6 +431,12 @@ async function validateBetReactions(messageId, lockTime) {
       if (previousBet && previousBet !== emojiIdentifier) {
         // User already bet on a different option, remove this reaction
         console.log(`Removing duplicate reaction from user ${userId}: ${emojiIdentifier}`);
+        
+        // Log duplicate reaction removal to file
+        const betName = match.question || 'Unknown Bet';
+        const username = user.username || user.tag || userId;
+        logToFile(`${betName} --- REMOVED DUPLICATE EMOJI FROM USER: ${username} (${emojiIdentifier})`);
+        
         await reaction.users.remove(userId).catch(console.error);
       } else {
         // Record this as the user's bet
